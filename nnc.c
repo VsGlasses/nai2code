@@ -10,10 +10,7 @@
 
 typedef enum __attribute__((packed)) {
     OBJ_TAG_LST = 0,
-    OBJ_TAG_NUM_FIX,
-    OBJ_TAG_NUM_FLT,
-    OBJ_TAG_NUM_FIX_LNK,
-    OBJ_TAG_NUM_FLT_LNK,
+    OBJ_TAG_NUM,
     OBJ_TAG_KWD_PLUS,
     OBJ_TAG_KWD_DOT,
     OBJ_TAG_SYM,
@@ -36,11 +33,6 @@ _Static_assert(sizeof(OBJ_IDX) == sizeof(uint16_t));
 #define OBJ_SIZE (1 << OBJ_SIZE_BITS)
 #define OBJ_SIZE_MASK (sizeof(OBJ) - 1)
 
-typedef union {
-    int64_t fix;
-    double  flt;
-} OBJ_NUM;
-
 typedef struct {
     uint64_t len;
     void *   ptr;
@@ -51,10 +43,13 @@ typedef struct {
     union {
         uint8_t str[0];
         struct __attribute__((packed)) {
-            OBJ_IDX car;
-            OBJ_IDX cdr;
             OBJ_IDX lbl;
-            OBJ_NUM num[0];
+            OBJ_IDX cdr;
+            union {
+                OBJ_IDX  car;
+                 int16_t   i;
+                uint16_t   u;
+            };
             OBJ_MEM mem[0];
         };
     };
@@ -123,10 +118,10 @@ eval(void)
             return;
         }
 
-        case OBJ_TAG_NUM_FIX: {
+        case OBJ_TAG_NUM: {
             OBJ * const p = gc_malloc(sizeof(OBJ));
-            p->tag = OBJ_TAG_NUM_FIX_LNK;
-            p->car = IDX(CR);
+            p->tag = OBJ_TAG_NUM;
+            p->i   = CR->i;
             p->cdr = IDX(SR);
             p->lbl = OBJ_IDX_NIL;
             SR = p;
@@ -136,25 +131,21 @@ eval(void)
             OBJ * const p = gc_malloc(sizeof(OBJ));
             OBJ const * const n0 = SR;
             OBJ const * const n1 = CDR(n0);
-            assert(n0->tag == OBJ_TAG_NUM_FIX_LNK);
-            assert(n1->tag == OBJ_TAG_NUM_FIX_LNK);
-            p->tag = OBJ_TAG_NUM_FIX;
-            p->car = OBJ_IDX_NIL;
+            assert(n0->tag == OBJ_TAG_NUM);
+            assert(n1->tag == OBJ_TAG_NUM);
+            p->tag = OBJ_TAG_NUM;
+            p->i   = n0->i + n1->i;
             p->cdr = IDX(CDR(n1));
             p->lbl = OBJ_IDX_NIL;
-            p->num->fix = CAR(n0)->num->fix + CAR(n1)->num->fix;
             SR = p;
         } goto next;
 
         case OBJ_TAG_KWD_DOT: {
-            assert(SR->tag == OBJ_TAG_NUM_FIX);
-            printf("%ld",SR->num->fix);
+            assert(SR->tag == OBJ_TAG_NUM);
+            printf("%d",SR->i);
             SR = CDR(SR);
         } goto next;
 
-        case OBJ_TAG_NUM_FLT:
-        case OBJ_TAG_NUM_FLT_LNK:
-        case OBJ_TAG_NUM_FIX_LNK:
         case OBJ_TAG_SYM ... OBJ_IDX$MAX:
             __builtin_unreachable();
     }
@@ -171,30 +162,28 @@ main(void)
 
     // 1 2 + .
 
-    OBJ * o = gc_malloc((2+2+1+1) * sizeof(OBJ));
+    OBJ * o = gc_malloc((1+1+1+1) * sizeof(OBJ));
 
     // '1'
-    o->tag = OBJ_TAG_NUM_FIX;
-    o->car = OBJ_IDX_NIL;
-    o->cdr = IDX(o) + 2;
+    o->tag = OBJ_TAG_NUM;
+    o->i   = 1;
+    o->cdr = IDX(o) + 1;
     o->lbl = OBJ_IDX_NIL;
-    o->num->fix = 1;
-    o += 2;
+    ++o;
 
     // '2'
-    o->tag = OBJ_TAG_NUM_FIX;
-    o->car = OBJ_IDX_NIL;
-    o->cdr = IDX(o) + 2;
+    o->tag = OBJ_TAG_NUM;
+    o->i   = 2;
+    o->cdr = IDX(o) + 1;
     o->lbl = OBJ_IDX_NIL;
-    o->num->fix = 2;
-    o += 2;
+    ++o;
 
     // '+'
     o->tag = OBJ_TAG_KWD_PLUS;
     o->car = OBJ_IDX_NIL;
     o->cdr = IDX(o) + 1;
     o->lbl = OBJ_IDX_NIL;
-    o += 1;
+    ++o;
 
     // '.'
     o->tag = OBJ_TAG_KWD_DOT;
