@@ -79,8 +79,8 @@ _Static_assert(sizeof(OBJ) == OBJ_SIZE);
 
 static OBJ heap[2][OBJ_IDX$MAX + 1];
 
-static OBJ *hp_top =  heap[0],
-           *hp     = &heap[0][OBJ_IDX$GC_TOP];
+static OBJ const *          hp_top =  heap[0];
+static OBJ       * restrict hp     = &heap[0][OBJ_IDX$GC_TOP];
 
     static void
 heap_init(OBJ * const h)
@@ -111,7 +111,7 @@ gc_malloc(size_t const s)
     return o;
 }
 
-static OBJ *SR,*CR,*DR;
+static const OBJ *SR,*CR,*DR;
 
     static void
 eval(void)
@@ -185,7 +185,7 @@ eval(void)
         } goto play;
 
         case OBJ_TAG_IF: {
-            OBJ * const o = SR;
+            OBJ const * const o = SR;
             SR = CDR(o);
             if (OBJ_TAG_LST == o->tag && OBJ_IDX_NIL == o->car) {
                 goto next;
@@ -309,8 +309,9 @@ main(void)
     const OBJ_IDX z     = gensym();
     const OBJ_IDX tarai = gensym();
 
-    /* (      */ CR = make_list(OBJ_TAG_LST,OBJ_IDX_NIL); printf("CR=%d\n",IDX(CR));
-    /* 3let   */ CR->car = IDX(make_list(OBJ_TAG_KWD_3let,OBJ_IDX_NIL));
+    OBJ * const o =
+    /* (      */ make_list(OBJ_TAG_LST,IDX(hp + 1)); printf("CR=%d\n",IDX(o));
+    /* 3let   */ make_list(OBJ_TAG_KWD_3let,OBJ_IDX_NIL);
     /* z      */ make_list(OBJ_TAG_HOP,z);
     /* y      */ make_list(OBJ_TAG_HOP,y);
     /* x      */ make_list(OBJ_TAG_HOP,x);
@@ -335,7 +336,7 @@ main(void)
     /* y      */ make_list(OBJ_TAG_HOP,y);
     /* tarai  */ make_list(OBJ_TAG_HOP,tarai);
     /* tarai) */ make_list(OBJ_TAG_HOP,tarai)->cdr = OBJ_IDX_NIL;
-    /* sbr    */ CR->cdr = IDX(make_list(OBJ_TAG_KWD_sbr,OBJ_IDX_NIL));
+    /* sbr    */ o->cdr = IDX(make_list(OBJ_TAG_KWD_sbr,OBJ_IDX_NIL));
     /* let    */ make_list(OBJ_TAG_KWD_let,OBJ_IDX_NIL);
     /* tarai  */ make_list(OBJ_TAG_HOP,tarai);
 
@@ -345,6 +346,7 @@ main(void)
     /* tarai  */ make_list(OBJ_TAG_HOP,tarai);
     /* . )    */ make_list(OBJ_TAG_KWD_DOT,OBJ_IDX_NIL)->cdr = OBJ_IDX_NIL;
 
+    CR = o;
     eval();
 
 	return EXIT_SUCCESS;
