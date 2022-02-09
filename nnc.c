@@ -7,6 +7,7 @@
 #pragma GCC diagnostic ignored "-Wzero-length-array"
 #pragma GCC diagnostic ignored "-Wc2x-extensions"
 #pragma GCC diagnostic ignored "-Wgnu-case-range"
+#pragma GCC diagnostic ignored "-Wgnu-zero-variadic-macro-arguments"
 
 typedef enum __attribute__((packed)) {
     OBJ_TAG_LST = 0,
@@ -28,29 +29,44 @@ typedef enum __attribute__((packed)) {
 
 _Static_assert(sizeof(OBJ_TAG) == sizeof(uint16_t));
 
+// PASS-1
+#define SYM(...)
+#define TAG(...)
+#define L(N) N = (NEXT - 1),
+
 typedef enum __attribute__((packed)) {
-    OBJ_IDX_NIL = 0,
-    OBJ_IDX$SYM_TOP,
-    OBJ_IDX_SYM_retAT = OBJ_IDX$SYM_TOP,
-    OBJ_IDX$GC_TOP,
+
+#define NEXT __LINE__
+#include "heap_top.inc"
+#undef NEXT
+
+#define NEXT OBJ_IDX$GC_TOP + __LINE__
+#include "bootstrap.inc"
+#undef NEXT
+
     OBJ_IDX$MAX = UINT16_MAX
 } OBJ_IDX;
 
 _Static_assert(sizeof(OBJ_IDX) == sizeof(uint16_t));
 
-#define OBJ_SIZE_BITS (3)
-#define OBJ_SIZE (1 << OBJ_SIZE_BITS)
-#define OBJ_SIZE_MASK (sizeof(OBJ) - 1)
+#undef SYM
+#undef TAG
+#undef L
 
 typedef struct {
     uint64_t len;
     void *   ptr;
 } OBJ_MEM;
 
+#define OBJ_SIZE_BITS (3)
+#define OBJ_SIZE (1 << OBJ_SIZE_BITS)
+#define OBJ_SIZE_MASK (sizeof(OBJ) - 1)
+
 typedef struct {
     OBJ_TAG tag;
     union {
-        uint8_t str[0];
+        uint8_t const str_ini[OBJ_SIZE - sizeof(OBJ_TAG)];
+        uint8_t       str[0];
         struct __attribute__((packed)) {
             OBJ_IDX lbl;
             OBJ_IDX cdr;
@@ -77,29 +93,37 @@ _Static_assert(sizeof(OBJ) == OBJ_SIZE);
 #define CDR(P) PTR((P)->cdr)
 #define LBL(P) PTR((P)->lbl)
 
-static OBJ heap[2][OBJ_IDX$MAX + 1];
+//  PASS-2
+#define SYM(STR) { .tag = (OBJ_TAG)(OBJ_TAG_SYM + sizeof(STR) - sizeof("")),.str_ini = STR },
+#define TAG3(TAG,CAR,CDR) { OBJ_TAG_ ## TAG,.car = (OBJ_IDX)(CAR),.cdr = (OBJ_IDX)(CDR),.lbl = OBJ_IDX_NIL },
+#define TAG2(TAG,CAR) TAG3(TAG,CAR,NEXT)
+#define TAG1(TAG) TAG2(TAG,OBJ_IDX_NIL)
+#define TAG_OPT(TAG,CAR,CDR,TAGn,...) TAGn
+#define TAG(...) TAG_OPT(__VA_ARGS__,TAG3,TAG2,TAG1)(__VA_ARGS__)
+#define L(...)
+
+static OBJ heap[2][OBJ_IDX$MAX + 1] = {
+    {
+#include "heap_top.inc"
+
+#define NEXT OBJ_IDX$GC_TOP + __LINE__
+#include "bootstrap.inc"
+#undef NEXT
+    },{
+#include "heap_top.inc"
+    }
+};
+
+#undef TAG
+#undef TAG_OPT
+#undef TAG1
+#undef TAG2
+#undef TAG3
+#undef SYM
+#undef L
 
 static OBJ const *          hp_top =  heap[0];
-static OBJ       * restrict hp     = &heap[0][OBJ_IDX$GC_TOP];
-
-    static void
-heap_init(OBJ * const h)
-{
-    {
-        OBJ * const o = h + OBJ_IDX_NIL;
-        o->tag = OBJ_TAG_LST;
-        o->car = o->cdr = o->lbl = OBJ_IDX_NIL;
-    }
-
-    {
-        OBJ * const o = h + OBJ_IDX_SYM_retAT;
-        o->tag = (OBJ_TAG)(OBJ_TAG_SYM + sizeof("ret@") - sizeof(""));
-        o->str[0] = 'r';
-        o->str[1] = 'e';
-        o->str[2] = 't';
-        o->str[3] = '@';
-    }
-}
+static OBJ       * restrict hp     = &heap[0][hp_start];
 
     static OBJ *
 gc_malloc(size_t const s)
@@ -274,79 +298,12 @@ eval(void)
     __builtin_unreachable();
 }
 
-    static OBJ_IDX
-gensym(void)
-{
-    OBJ * const o = gc_malloc(sizeof(OBJ));
-    o->tag = OBJ_TAG_SYM;
-    return IDX(o);
-}
-
-    static OBJ *
-make_list(
-        OBJ_TAG const tag,
-        OBJ_IDX const car)
-{
-    OBJ * const o = gc_malloc(sizeof(OBJ));
-    o->tag = tag;
-    o->car = car;
-    o->lbl = OBJ_IDX_NIL;
-    o->cdr = IDX(hp);
-    return o;
-}
-
 	int
 main(void)
 {
-    heap_init(heap[0]);
-    heap_init(heap[1]);
-
     SR = DR = NIL;
+    CR = PTR(bs_start);
 
-    // make symbols (x,y,z,tarai)
-    const OBJ_IDX x     = gensym();
-    const OBJ_IDX y     = gensym();
-    const OBJ_IDX z     = gensym();
-    const OBJ_IDX tarai = gensym();
-
-    OBJ * const o =
-    /* (      */ make_list(OBJ_TAG_LST,IDX(hp + 1)); printf("CR=%d\n",IDX(o));
-    /* 3let   */ make_list(OBJ_TAG_KWD_3let,OBJ_IDX_NIL);
-    /* z      */ make_list(OBJ_TAG_HOP,z);
-    /* y      */ make_list(OBJ_TAG_HOP,y);
-    /* x      */ make_list(OBJ_TAG_HOP,x);
-    /* y      */ make_list(OBJ_TAG_HOP,y);
-    /* x      */ make_list(OBJ_TAG_HOP,x);
-    /* <      */ make_list(OBJ_TAG_KWD_LT,OBJ_IDX_NIL);
-    /* if     */ make_list(OBJ_TAG_IF,IDX(hp + 2));
-    /* y)     */ make_list(OBJ_TAG_HOP,y)->cdr = OBJ_IDX_NIL;
-    /* x      */ make_list(OBJ_TAG_HOP,x);
-    /* 1-     */ make_list(OBJ_TAG_KWD_1MINUS,OBJ_IDX_NIL);
-    /* y      */ make_list(OBJ_TAG_HOP,y);
-    /* z      */ make_list(OBJ_TAG_HOP,z);
-    /* tarai  */ make_list(OBJ_TAG_HOP,tarai);
-    /* y      */ make_list(OBJ_TAG_HOP,y);
-    /* 1-     */ make_list(OBJ_TAG_KWD_1MINUS,OBJ_IDX_NIL);
-    /* z      */ make_list(OBJ_TAG_HOP,z);
-    /* x      */ make_list(OBJ_TAG_HOP,x);
-    /* tarai  */ make_list(OBJ_TAG_HOP,tarai);
-    /* z      */ make_list(OBJ_TAG_HOP,z);
-    /* 1-     */ make_list(OBJ_TAG_KWD_1MINUS,OBJ_IDX_NIL);
-    /* x      */ make_list(OBJ_TAG_HOP,x);
-    /* y      */ make_list(OBJ_TAG_HOP,y);
-    /* tarai  */ make_list(OBJ_TAG_HOP,tarai);
-    /* tarai) */ make_list(OBJ_TAG_HOP,tarai)->cdr = OBJ_IDX_NIL;
-    /* sbr    */ o->cdr = IDX(make_list(OBJ_TAG_KWD_sbr,OBJ_IDX_NIL));
-    /* let    */ make_list(OBJ_TAG_KWD_let,OBJ_IDX_NIL);
-    /* tarai  */ make_list(OBJ_TAG_HOP,tarai);
-
-    /* 1      */ make_list(OBJ_TAG_NUM,5);
-    /* 2      */ make_list(OBJ_TAG_NUM,2);
-    /* 3      */ make_list(OBJ_TAG_NUM,0);
-    /* tarai  */ make_list(OBJ_TAG_HOP,tarai);
-    /* . )    */ make_list(OBJ_TAG_KWD_DOT,OBJ_IDX_NIL)->cdr = OBJ_IDX_NIL;
-
-    CR = o;
     eval();
 
 	return EXIT_SUCCESS;
