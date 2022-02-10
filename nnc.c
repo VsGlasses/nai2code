@@ -15,7 +15,9 @@ typedef enum __attribute__((packed)) {
     OBJ_TAG_HOP,
     OBJ_TAG_SBR,
     OBJ_TAG_IF,
-    OBJ_TAG_KWD_let,
+    OBJ_TAG_MOV,
+    OBJ_TAG_KWD$MIN,
+    OBJ_TAG_KWD_let = OBJ_TAG_KWD$MIN,
     OBJ_TAG_KWD_2let,
     OBJ_TAG_KWD_3let,
     OBJ_TAG_KWD_sbr,
@@ -23,13 +25,14 @@ typedef enum __attribute__((packed)) {
     OBJ_TAG_KWD_DOT,
     OBJ_TAG_KWD_LT,
     OBJ_TAG_KWD_1MINUS,
+    OBJ_TAG_KWD$MAX = OBJ_TAG_KWD_1MINUS,
     OBJ_TAG_SYM,
     OBJ_TAG$MAX = UINT16_MAX
 } OBJ_TAG;
 
 _Static_assert(sizeof(OBJ_TAG) == sizeof(uint16_t));
 
-// PASS-1
+/// PASS-1
 #define SYM(...)
 #define TAG(...)
 #define L(N) N = (NEXT - 1),
@@ -52,6 +55,7 @@ _Static_assert(sizeof(OBJ_IDX) == sizeof(uint16_t));
 #undef SYM
 #undef TAG
 #undef L
+//;
 
 typedef struct {
     uint64_t len;
@@ -93,7 +97,7 @@ _Static_assert(sizeof(OBJ) == OBJ_SIZE);
 #define CDR(P) PTR((P)->cdr)
 #define LBL(P) PTR((P)->lbl)
 
-//  PASS-2
+///  PASS-2
 #define SYM(STR) { .tag = (OBJ_TAG)(OBJ_TAG_SYM + sizeof(STR) - sizeof("")),.str_ini = STR },
 #define TAG3(TAG,CAR,CDR) { OBJ_TAG_ ## TAG,.car = (OBJ_IDX)(CAR),.cdr = (OBJ_IDX)(CDR),.lbl = OBJ_IDX_NIL },
 #define TAG2(TAG,CAR) TAG3(TAG,CAR,NEXT)
@@ -121,21 +125,94 @@ static OBJ heap[2][OBJ_IDX$MAX + 1] = {
 #undef TAG3
 #undef SYM
 #undef L
+//;
 
 static OBJ const *          hp_top =  heap[0];
 static OBJ       * restrict hp     = &heap[0][hp_start];
 
+static const OBJ *SR,*CR,*DR;
+
+    static OBJ_IDX
+gc_copy(
+        OBJ *   const prev_top,
+        OBJ_IDX const i)
+{
+    if (i < OBJ_IDX$GC_TOP) return i;
+
+    OBJ * const o = &prev_top[i];
+
+    if (OBJ_TAG_MOV == o->tag) return o->cdr;
+
+    if (OBJ_TAG_SYM >= o->tag) {
+        __builtin_mempcpy(hp,o,sizeof(OBJ));
+        o->cdr = IDX(hp++);
+    } else {
+        const size_t len = __builtin_offsetof(OBJ,str) + (o->tag - OBJ_TAG_SYM);
+        __builtin_mempcpy(hp,o,len);
+        o->cdr = IDX(hp);
+        hp += (len + OBJ_SIZE_MASK) >> OBJ_SIZE_BITS;
+    }
+
+    o->tag = OBJ_TAG_MOV;
+    return o->cdr;
+}
+
     static OBJ *
 gc_malloc(size_t const s)
 {
+    assert(s);
+
+    if ((COUNTOF(heap[0]) - (size_t)(hp - hp_top)) * sizeof(OBJ) >= s) {
+        OBJ * const o = hp;
+        _Static_assert(COUNTOF(heap[0]) * sizeof(OBJ) <= SIZE_MAX - OBJ_SIZE_MASK);
+        hp += (s + OBJ_SIZE_MASK) >> OBJ_SIZE_BITS;
+        return o;
+    }
+
+    OBJ * const prev_top = heap[hp_top != heap[0]];
+    OBJ * const next_top = heap[hp_top == heap[0]];
+
+    OBJ * o = hp = next_top + OBJ_IDX$GC_TOP;
+    hp_top = next_top;
+
+    SR = PTR(gc_copy(prev_top,(OBJ_IDX)(SR - prev_top)));
+    CR = PTR(gc_copy(prev_top,(OBJ_IDX)(CR - prev_top)));
+    DR = PTR(gc_copy(prev_top,(OBJ_IDX)(DR - prev_top)));
+
+    while (o < hp) switch (o->tag) {
+        case OBJ_TAG_LST:
+        case OBJ_TAG_HOP:
+        case OBJ_TAG_SBR:
+        case OBJ_TAG_IF:
+            o->car = gc_copy(prev_top,o->car);
+            __attribute__((fallthrough));
+
+        case OBJ_TAG_NUM:
+            o->lbl = gc_copy(prev_top,o->lbl);
+            __attribute__((fallthrough));
+
+        case OBJ_TAG_KWD$MIN ... OBJ_TAG_KWD$MAX:
+             o->cdr = gc_copy(prev_top,o->cdr);
+             ++o;
+             continue;
+
+        case OBJ_TAG_SYM ... OBJ_TAG$MAX:
+            o += (__builtin_offsetof(OBJ,str) + (o->tag - OBJ_TAG_SYM) + OBJ_SIZE_MASK) >> OBJ_SIZE_BITS;
+            continue;
+
+        case OBJ_TAG_MOV:
+             __builtin_unreachable();
+    }
+
+    //printf("gc_end:%ld use\n",hp - hp_top);
+
     assert((COUNTOF(heap[0]) - (size_t)(hp - hp_top)) * sizeof(OBJ) >= s);
-    OBJ * const o = hp;
-    _Static_assert(COUNTOF(heap[0]) * sizeof(OBJ) <= SIZE_MAX - OBJ_SIZE_MASK);
+    o = hp;
     hp += (s + OBJ_SIZE_MASK) >> OBJ_SIZE_BITS;
     return o;
 }
 
-static const OBJ *SR,*CR,*DR;
+static uint64_t sbr_cnt = 0;
 
     static void
 eval(void)
@@ -206,6 +283,7 @@ eval(void)
                 DR = o;
             }
             CR = CAR(CR);
+            ++sbr_cnt;
         } goto play;
 
         case OBJ_TAG_IF: {
@@ -265,7 +343,6 @@ eval(void)
             OBJ * const o = gc_malloc(sizeof(OBJ));
             OBJ const * const n0 = SR;
             OBJ const * const n1 = CDR(n0);
-            printf("n0(idx:%d tag:%d)=%d,n1(idx:%d tag:%d)=%d\n",IDX(n0),n0->tag,n0->i,IDX(n1),n1->tag,n1->i);
             assert(n0->tag == OBJ_TAG_NUM);
             assert(n1->tag == OBJ_TAG_NUM);
             if (n0->i > n1->i) {
@@ -291,6 +368,7 @@ eval(void)
         } goto next;
 
         case OBJ_TAG_SYM ... OBJ_IDX$MAX:
+        case OBJ_TAG_MOV:
             __builtin_unreachable();
     }
 
@@ -305,6 +383,8 @@ main(void)
     CR = PTR(bs_start);
 
     eval();
+
+    printf("sbr_cnt = %ld\n",sbr_cnt);
 
 	return EXIT_SUCCESS;
 }
