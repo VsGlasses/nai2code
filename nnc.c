@@ -97,6 +97,19 @@ _Static_assert(sizeof(OBJ) == OBJ_SIZE);
 #define CDR(P) PTR((P)->cdr)
 #define LBL(P) PTR((P)->lbl)
 
+#if 1
+#define likely(x)   __builtin_expect(!!(x),1)
+#define unlikely(x) __builtin_expect(!!(x),0)
+#else
+#if 1
+#define likely(x)   (!!(x))
+#define unlikely(x) (!!(x))
+#else
+#define likely(x)   __builtin_expect(!!(x),0)
+#define unlikely(x) __builtin_expect(!!(x),1)
+#endif
+#endif
+
 ///  PASS-2
 #define SYM(STR) { .tag = (OBJ_TAG)(OBJ_TAG_SYM + sizeof(STR) - sizeof("")),.str_ini = STR },
 #define TAG3(TAG,CAR,CDR) { OBJ_TAG_ ## TAG,.car = (OBJ_IDX)(CAR),.cdr = (OBJ_IDX)(CDR),.lbl = OBJ_IDX_NIL },
@@ -179,7 +192,7 @@ gc_malloc(size_t const s)
     CR = PTR(gc_copy(prev_top,(OBJ_IDX)(CR - prev_top)));
     DR = PTR(gc_copy(prev_top,(OBJ_IDX)(DR - prev_top)));
 
-    while (o < hp) switch (o->tag) {
+    while (unlikely(o < hp)) switch (o->tag) {
         case OBJ_TAG_LST:
         case OBJ_TAG_HOP:
         case OBJ_TAG_SBR:
@@ -221,11 +234,11 @@ eval(void)
 
     next: CR = CDR(CR);
 
-    play: switch (CR->tag) {
+    play: switch (__builtin_expect(CR->tag,OBJ_TAG_HOP)) {
 
         case OBJ_TAG_LST: {
-            if (NIL == CR) {
-                for (OBJ const * o = DR; o != NIL; o = CDR(o)) {
+            if (unlikely(NIL == CR)) {
+                for (OBJ const * o = DR; likely(o != NIL); o = CDR(o)) {
                     if (OBJ_IDX_SYM_retAT == o->lbl) {
                         assert(OBJ_TAG_LST == o->tag);
                         DR = CDR(o);
@@ -257,7 +270,7 @@ eval(void)
             OBJ * const o = gc_malloc(sizeof(OBJ));
             OBJ_IDX const s = CR->car;
             assert(PTR(s)->tag >= OBJ_TAG_SYM);
-            for (OBJ const * i = DR; i != NIL; i = CDR(i)) {
+            for (OBJ const * i = DR; likely(i != NIL); i = CDR(i)) {
                 if (i->lbl != s) continue;
                 o->tag = i->tag;
                 o->cdr = CR->cdr;
@@ -274,7 +287,7 @@ eval(void)
         } goto next;
 
         case OBJ_TAG_SBR: {
-            if (OBJ_IDX_NIL != CR->cdr) /* tail call check */ {
+            if (likely(OBJ_IDX_NIL != CR->cdr)) /* tail call check */ {
                 OBJ * const o = gc_malloc(sizeof(OBJ));
                 o->tag = OBJ_TAG_LST;
                 o->lbl = OBJ_IDX_SYM_retAT;
