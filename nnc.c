@@ -17,7 +17,8 @@ typedef enum __attribute__((packed)) {
     OBJ_TAG_IF,
     OBJ_TAG_MOV,
     OBJ_TAG_KWD$MIN,
-    OBJ_TAG_KWD_let = OBJ_TAG_KWD$MIN,
+    OBJ_TAG_KWD_ret = OBJ_TAG_KWD$MIN,
+    OBJ_TAG_KWD_let,
     OBJ_TAG_KWD_2let,
     OBJ_TAG_KWD_3let,
     OBJ_TAG_KWD_sbr,
@@ -237,18 +238,6 @@ eval(void)
     play: switch (__builtin_expect(CR->tag,OBJ_TAG_HOP)) {
 
         case OBJ_TAG_LST: {
-            if (unlikely(NIL == CR)) {
-                for (OBJ const * o = DR; likely(o != NIL); o = CDR(o)) {
-                    if (OBJ_IDX_SYM_retAT == o->lbl) {
-                        assert(OBJ_TAG_LST == o->tag);
-                        DR = CDR(o);
-                        CR = CDR(CAR(o));
-                        goto play;
-                    }
-                }
-                return;
-            }
-
             OBJ * const o = gc_malloc(sizeof(OBJ));
             o->tag = OBJ_TAG_LST;
             o->cdr = IDX(SR);
@@ -307,6 +296,18 @@ eval(void)
             }
             CR = CAR(CR);
         } goto play;
+
+        case OBJ_TAG_KWD_ret: {
+            for (OBJ const * o = DR; likely(o != NIL); o = CDR(o)) {
+                if (OBJ_IDX_SYM_retAT == o->lbl) {
+                    assert(OBJ_TAG_LST == o->tag);
+                    DR = CDR(o);
+                    CR = CDR(CAR(o));
+                    goto play;
+                }
+            }
+            return;
+        }
 
         case OBJ_TAG_KWD_let ... OBJ_TAG_KWD_3let: {
             unsigned n = CR->tag - OBJ_TAG_KWD_let + 1;
