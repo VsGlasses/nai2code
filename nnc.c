@@ -8,6 +8,8 @@
 #pragma GCC diagnostic ignored "-Wc2x-extensions"
 #pragma GCC diagnostic ignored "-Wgnu-case-range"
 #pragma GCC diagnostic ignored "-Wgnu-zero-variadic-macro-arguments"
+#pragma GCC diagnostic ignored "-Wgnu-label-as-value"
+#pragma GCC diagnostic ignored "-Wgnu-designator"
 
 typedef enum __attribute__((packed)) {
     OBJ_TAG_LST = 0,
@@ -15,7 +17,6 @@ typedef enum __attribute__((packed)) {
     OBJ_TAG_HOP,
     OBJ_TAG_SBR,
     OBJ_TAG_IF,
-    OBJ_TAG_MOV,
     OBJ_TAG_KWD$MIN,
     OBJ_TAG_KWD_ret = OBJ_TAG_KWD$MIN,
     OBJ_TAG_KWD_let,
@@ -27,6 +28,7 @@ typedef enum __attribute__((packed)) {
     OBJ_TAG_KWD_LT,
     OBJ_TAG_KWD_1MINUS,
     OBJ_TAG_KWD$MAX = OBJ_TAG_KWD_1MINUS,
+    OBJ_TAG_MOV,
     OBJ_TAG_SYM,
     OBJ_TAG$MAX = UINT16_MAX
 } OBJ_TAG;
@@ -231,163 +233,163 @@ static uint64_t sbr_cnt = 0;
     static void
 eval(void)
 {
-    goto play;
+    static void const * const play[] = {
+        [ OBJ_TAG_LST        ] = &&I_LST,
+        [ OBJ_TAG_NUM        ] = &&I_NUM,
+        [ OBJ_TAG_HOP        ] = &&I_HOP,
+        [ OBJ_TAG_SBR        ] = &&I_SBR,
+        [ OBJ_TAG_IF         ] = &&I_IF,
+        [ OBJ_TAG_KWD_ret    ] = &&I_KWD_ret,
+        [ OBJ_TAG_KWD_let ...
+          OBJ_TAG_KWD_3let   ] = &&I_KWD_let,
+        [ OBJ_TAG_KWD_sbr    ] = &&I_KWD_sbr,
+        [ OBJ_TAG_KWD_PLUS   ] = &&I_KWD_PLUS,
+        [ OBJ_TAG_KWD_DOT    ] = &&I_KWD_DOT,
+        [ OBJ_TAG_KWD_LT     ] = &&I_KWD_LT,
+        [ OBJ_TAG_KWD_1MINUS ] = &&I_KWD_1MINUS,
+    };
 
-    next: CR = CDR(CR);
+    goto *play[CR->tag];
 
-    play: switch (__builtin_expect(CR->tag,OBJ_TAG_HOP)) {
+    I_LST: {
+        OBJ * const o = gc_malloc(sizeof(OBJ));
+        o->tag = OBJ_TAG_LST;
+        o->cdr = IDX(SR);
+        o->lbl = OBJ_IDX_NIL;
+        o->car = CR->car;
+        SR = o;
+    } goto *play[(CR = CDR(CR))->tag];
 
-        case OBJ_TAG_LST: {
-            OBJ * const o = gc_malloc(sizeof(OBJ));
-            o->tag = OBJ_TAG_LST;
-            o->cdr = IDX(SR);
+    I_NUM: {
+        OBJ * const o = gc_malloc(sizeof(OBJ));
+        o->tag = OBJ_TAG_NUM;
+        o->i   = CR->i;
+        o->cdr = IDX(SR);
+        o->lbl = OBJ_IDX_NIL;
+        SR = o;
+    } goto *play[(CR = CDR(CR))->tag];
+
+    I_HOP: {
+        OBJ * const o = gc_malloc(sizeof(OBJ));
+        OBJ_IDX const s = CR->car;
+        assert(PTR(s)->tag >= OBJ_TAG_SYM);
+        for (OBJ const * i = DR; likely(i != NIL); i = CDR(i)) {
+            if (i->lbl != s) continue;
+            o->tag = i->tag;
+            o->cdr = CR->cdr;
             o->lbl = OBJ_IDX_NIL;
-            o->car = CR->car;
-            SR = o;
-        } goto next;
-
-        case OBJ_TAG_NUM: {
-            OBJ * const o = gc_malloc(sizeof(OBJ));
-            o->tag = OBJ_TAG_NUM;
-            o->i   = CR->i;
-            o->cdr = IDX(SR);
-            o->lbl = OBJ_IDX_NIL;
-            SR = o;
-        } goto next;
-
-        case OBJ_TAG_HOP: {
-            OBJ * const o = gc_malloc(sizeof(OBJ));
-            OBJ_IDX const s = CR->car;
-            assert(PTR(s)->tag >= OBJ_TAG_SYM);
-            for (OBJ const * i = DR; likely(i != NIL); i = CDR(i)) {
-                if (i->lbl != s) continue;
-                o->tag = i->tag;
-                o->cdr = CR->cdr;
-                o->lbl = OBJ_IDX_NIL;
-                o->car = i->car;
-                CR = o;
-                goto play;
-            }
-            // no found.
-            o->tag = OBJ_TAG_LST;
-            o->lbl = o->car = OBJ_IDX_NIL;
-            o->cdr = IDX(SR);
-            SR = o;
-        } goto next;
-
-        case OBJ_TAG_SBR: {
-            if (likely(OBJ_IDX_NIL != CR->cdr)) /* tail call check */ {
-                OBJ * const o = gc_malloc(sizeof(OBJ));
-                o->tag = OBJ_TAG_LST;
-                o->lbl = OBJ_IDX_SYM_retAT;
-                o->car = IDX(CR);
-                o->cdr = IDX(DR);
-                DR = o;
-            }
-            CR = CAR(CR);
-            ++sbr_cnt;
-        } goto play;
-
-        case OBJ_TAG_IF: {
-            OBJ const * const o = SR;
-            SR = CDR(o);
-            if (OBJ_TAG_LST == o->tag && OBJ_IDX_NIL == o->car) {
-                goto next;
-            }
-            CR = CAR(CR);
-        } goto play;
-
-        case OBJ_TAG_KWD_ret: {
-            for (OBJ const * o = DR; likely(o != NIL); o = CDR(o)) {
-                if (OBJ_IDX_SYM_retAT == o->lbl) {
-                    assert(OBJ_TAG_LST == o->tag);
-                    DR = CDR(o);
-                    CR = CDR(CAR(o));
-                    goto play;
-                }
-            }
-            return;
+            o->car = i->car;
+            goto *play[(CR = o)->tag];
         }
+        // no found.
+        o->tag = OBJ_TAG_LST;
+        o->lbl = o->car = OBJ_IDX_NIL;
+        o->cdr = IDX(SR);
+        SR = o;
+    } goto *play[(CR = CDR(CR))->tag];
 
-        case OBJ_TAG_KWD_let ... OBJ_TAG_KWD_3let: {
-            unsigned n = CR->tag - OBJ_TAG_KWD_let + 1;
-            OBJ * o = gc_malloc(n * sizeof(OBJ));
-            do {
-                assert(OBJ_TAG_HOP == CDR(CR)->tag);
-                assert(SR);
-                o->tag = SR->tag;
-                o->cdr = IDX(DR);
-                o->lbl = (CR = CDR(CR))->car;
-                o->car = SR->car;
-                SR = CDR(SR);
-                DR = o++;
-            } while (--n);
-        } goto next;
-
-        case OBJ_TAG_KWD_PLUS: {
+    I_SBR: {
+        if (likely(OBJ_IDX_NIL != CR->cdr)) /* tail call check */ {
             OBJ * const o = gc_malloc(sizeof(OBJ));
-            OBJ const * const n0 = SR;
-            OBJ const * const n1 = CDR(n0);
-            assert(n0->tag == OBJ_TAG_NUM);
-            assert(n1->tag == OBJ_TAG_NUM);
-            o->tag = OBJ_TAG_NUM;
-            o->i   = n0->i + n1->i;
-            o->cdr = n1->cdr;
-            o->lbl = OBJ_IDX_NIL;
-            SR = o;
-        } goto next;
+            o->tag = OBJ_TAG_LST;
+            o->lbl = OBJ_IDX_SYM_retAT;
+            o->car = IDX(CR);
+            o->cdr = IDX(DR);
+            DR = o;
+        }
+        ++sbr_cnt;
+    } goto *play[(CR = CAR(CR))->tag];
 
-        case OBJ_TAG_KWD_DOT: {
-            assert(SR->tag == OBJ_TAG_NUM);
-            printf("%d\n",SR->i);
-            SR = CDR(SR);
-        } goto next;
+    I_IF: {
+        OBJ const * const o = SR;
+        SR = CDR(o);
+        if (OBJ_TAG_LST == o->tag && OBJ_IDX_NIL == o->car) {
+            goto *play[(CR = CDR(CR))->tag];
+        }
+    } goto *play[(CR = CAR(CR))->tag];
 
-        case OBJ_TAG_KWD_sbr: {
-            assert(OBJ_TAG_LST == SR->tag);
-            OBJ * const o = gc_malloc(sizeof(OBJ));
-            o->tag = OBJ_TAG_SBR;
-            o->cdr = SR->cdr;
-            o->lbl = OBJ_IDX_NIL;
-            o->car = SR->car;
-            SR = o;
-        } goto next;
-
-        case OBJ_TAG_KWD_LT: {
-            OBJ * const o = gc_malloc(sizeof(OBJ));
-            OBJ const * const n0 = SR;
-            OBJ const * const n1 = CDR(n0);
-            assert(n0->tag == OBJ_TAG_NUM);
-            assert(n1->tag == OBJ_TAG_NUM);
-            if (n0->i > n1->i) {
-                o->tag = OBJ_TAG_NUM;
-                o->i   = -1;
-            } else {
-                o->tag = OBJ_TAG_LST;
-                o->car = OBJ_IDX_NIL;
+    I_KWD_ret: {
+        for (OBJ const * o = DR; likely(o != NIL); o = CDR(o)) {
+            if (OBJ_IDX_SYM_retAT == o->lbl) {
+                assert(OBJ_TAG_LST == o->tag);
+                DR = CDR(o);
+                CR = CDR(CAR(o));
+                goto *play[CR->tag];
             }
-            o->lbl = OBJ_IDX_NIL;
-            o->cdr = n1->cdr;
-            SR = o;
-        } goto next;
+        }
+    } return;
 
-        case OBJ_TAG_KWD_1MINUS: {
-            OBJ * const o = gc_malloc(sizeof(OBJ));
-            assert(SR->tag == OBJ_TAG_NUM);
+    I_KWD_let: {
+        unsigned n = CR->tag - OBJ_TAG_KWD_let + 1;
+        OBJ * o = gc_malloc(n * sizeof(OBJ));
+        do {
+            assert(OBJ_TAG_HOP == CDR(CR)->tag);
+            assert(SR);
+            o->tag = SR->tag;
+            o->cdr = IDX(DR);
+            o->lbl = (CR = CDR(CR))->car;
+            o->car = SR->car;
+            SR = CDR(SR);
+            DR = o++;
+        } while (--n);
+    } goto *play[(CR = CDR(CR))->tag];
+
+    I_KWD_PLUS: {
+        OBJ * const o = gc_malloc(sizeof(OBJ));
+        OBJ const * const n0 = SR;
+        OBJ const * const n1 = CDR(n0);
+        assert(n0->tag == OBJ_TAG_NUM);
+        assert(n1->tag == OBJ_TAG_NUM);
+        o->tag = OBJ_TAG_NUM;
+        o->i   = n0->i + n1->i;
+        o->cdr = n1->cdr;
+        o->lbl = OBJ_IDX_NIL;
+        SR = o;
+    } goto *play[(CR = CDR(CR))->tag];
+
+    I_KWD_DOT: {
+        assert(SR->tag == OBJ_TAG_NUM);
+        printf("%d\n",SR->i);
+        SR = CDR(SR);
+    } goto *play[(CR = CDR(CR))->tag];
+
+    I_KWD_sbr: {
+        assert(OBJ_TAG_LST == SR->tag);
+        OBJ * const o = gc_malloc(sizeof(OBJ));
+        o->tag = OBJ_TAG_SBR;
+        o->cdr = SR->cdr;
+        o->lbl = OBJ_IDX_NIL;
+        o->car = SR->car;
+        SR = o;
+    } goto *play[(CR = CDR(CR))->tag];
+
+    I_KWD_LT: {
+        OBJ * const o = gc_malloc(sizeof(OBJ));
+        OBJ const * const n0 = SR;
+        OBJ const * const n1 = CDR(n0);
+        assert(n0->tag == OBJ_TAG_NUM);
+        assert(n1->tag == OBJ_TAG_NUM);
+        if (n0->i > n1->i) {
             o->tag = OBJ_TAG_NUM;
-            o->i = SR->i - 1;
-            o->lbl = OBJ_IDX_NIL;
-            o->cdr = SR->cdr;
-            SR = o;
-        } goto next;
+            o->i   = -1;
+        } else {
+            o->tag = OBJ_TAG_LST;
+            o->car = OBJ_IDX_NIL;
+        }
+        o->lbl = OBJ_IDX_NIL;
+        o->cdr = n1->cdr;
+        SR = o;
+    } goto *play[(CR = CDR(CR))->tag];
 
-        case OBJ_TAG_SYM ... OBJ_IDX$MAX:
-        case OBJ_TAG_MOV:
-            __builtin_unreachable();
-    }
-
-    printf("tag:%d\n",CR->tag);
-    __builtin_unreachable();
+    I_KWD_1MINUS: {
+        OBJ * const o = gc_malloc(sizeof(OBJ));
+        assert(SR->tag == OBJ_TAG_NUM);
+        o->tag = OBJ_TAG_NUM;
+        o->i = SR->i - 1;
+        o->lbl = OBJ_IDX_NIL;
+        o->cdr = SR->cdr;
+        SR = o;
+    } goto *play[(CR = CDR(CR))->tag];
 }
 
 	int
