@@ -15,10 +15,8 @@ typedef enum __attribute__((packed)) {
     OBJ_TAG_NIL = 0,
     OBJ_TAG_LST,
     OBJ_TAG_NUM,
-    OBJ_TAG_DYN,
-    OBJ_TAG_LEX,
-    OBJ_TAG_LED,    // Load Effective DYN
-    OBJ_TAG_LEL,    // Load Effective LEX
+    OBJ_TAG_VAR,
+    OBJ_TAG_LEV,    // Load Effective VAR
     OBJ_TAG_IF,
     OBJ_TAG_KWD$MIN,
     OBJ_TAG_KWD_let = OBJ_TAG_KWD$MIN,
@@ -220,10 +218,8 @@ gc_malloc(size_t const s)
             o->sym = gc_copy(prev_top,o->sym);
             __attribute__((fallthrough));
 
-        case OBJ_TAG_DYN:
-        case OBJ_TAG_LEX:
-        case OBJ_TAG_LED:
-        case OBJ_TAG_LEL:
+        case OBJ_TAG_VAR:
+        case OBJ_TAG_LEV:
             o->car = gc_copy(prev_top,o->car);
             __attribute__((fallthrough));
 
@@ -264,6 +260,26 @@ call(
     return CDR(i);
 }
 
+    static OBJ const *
+search_var(
+    OBJ const *   i,
+    OBJ_IDX const s)
+{
+    while (likely(i != NIL)) {
+        if (OBJ_TAG_NIL == i->tag) {
+            OBJ const * const found = search_var(PTR(i->sym),s);
+            if (found != NIL) {
+                return found;
+            }
+        }
+        else if (i->sym == s) {
+            return i;
+        }
+        i = CDR(i);
+    }
+    return NIL;
+}
+
     static void
 eval(void)
 {
@@ -271,10 +287,8 @@ eval(void)
         [ OBJ_TAG_NIL        ] = &&I_NIL,
         [ OBJ_TAG_LST        ] = &&I_cp,
         [ OBJ_TAG_NUM        ] = &&I_cp,
-        [ OBJ_TAG_DYN        ] = &&I_var,
-        [ OBJ_TAG_LEX        ] = &&I_var,
-        [ OBJ_TAG_LED        ] = &&I_lea,
-        [ OBJ_TAG_LEL        ] = &&I_lea,
+        [ OBJ_TAG_VAR        ] = &&I_VAR,
+        [ OBJ_TAG_LEV        ] = &&I_LEV,
         [ OBJ_TAG_IF         ] = &&I_IF,
         [ OBJ_TAG_KWD_let ...
           OBJ_TAG_KWD_3let   ] = &&I_KWD_let,
@@ -310,118 +324,78 @@ eval(void)
         SR = o;
     } goto *next[(CR = CDR(CR))->tag];
 
-    I_var: {
+    I_VAR: {
         OBJ * const o = gc_malloc(sizeof(OBJ));
         OBJ_IDX const s = CR->car;
         assert(PTR(s)->tag >= OBJ_TAG_SYM);
-        OBJ const * i = DR;
-        if (OBJ_TAG_LEX == CR->tag) {
-            while (likely(i != NIL)) {
-                if (OBJ_TAG_NIL == i->tag) {
-                    i = PTR(i->sym);
-                    break;
-                }
-                i = CDR(i);
-            }
+        OBJ const * i = search_var(DR,s);
+
+        switch (i->tag) {
+            case OBJ_TAG_NUM_REF:
+                i = CAR(i);
+                assert(i->tag == OBJ_TAG_NUM);
+                __attribute__((fallthrough));
+
+            case OBJ_TAG_NIL:
+            case OBJ_TAG_LST: {
+                o->tag = i->tag;
+                o->cdr = IDX(SR);
+                o->i32 = i->i32;
+                SR = o;
+            } goto *next[(CR = CDR(CR))->tag];
+
+            case OBJ_TAG_DEF: {
+                CR = call(o,i);
+            } goto *next[CR->tag];
+
+            case OBJ_TAG_NUM:
+            case OBJ_TAG_VAR:
+            case OBJ_TAG_LEV:
+            case OBJ_TAG_IF:
+            case OBJ_TAG_KWD$MIN ...  OBJ_TAG_KWD$MAX:
+            case OBJ_TAG_MOV:
+            case OBJ_TAG_SYM ... OBJ_TAG$MAX:
+                assert(0);
         }
+    } __builtin_unreachable();
 
-        while (likely(i != NIL)) {
-            if (i->sym == s) switch (i->tag) {
-                case OBJ_TAG_NUM_REF:
-                    i = CAR(i);
-                    assert(i->tag == OBJ_TAG_NUM);
-                    __attribute__((fallthrough));
-
-                case OBJ_TAG_NIL:
-                case OBJ_TAG_LST: {
-                    o->tag = i->tag;
-                    o->cdr = IDX(SR);
-                    o->i32 = i->i32;
-                    SR = o;
-                } goto *next[(CR = CDR(CR))->tag];
-
-                case OBJ_TAG_DEF: {
-                    CR = call(o,i);
-                } goto *next[CR->tag];
-
-                case OBJ_TAG_NUM:
-                case OBJ_TAG_DYN:
-                case OBJ_TAG_LEX:
-                case OBJ_TAG_LED:
-                case OBJ_TAG_LEL:
-                case OBJ_TAG_IF:
-                case OBJ_TAG_KWD$MIN ...  OBJ_TAG_KWD$MAX:
-                case OBJ_TAG_MOV:
-                case OBJ_TAG_SYM ... OBJ_TAG$MAX:
-                    assert(0);
-                    __builtin_unreachable();
-            }
-            i = CDR(i);
-        }
-        // no found.
-        o->tag = OBJ_TAG_NIL;
-        o->car = o->sym = OBJ_IDX_NIL;
-        o->cdr = IDX(SR);
-        SR = o;
-    } goto *next[(CR = CDR(CR))->tag];
-
-    I_lea: {
+    I_LEV: {
         OBJ * const o = gc_malloc(sizeof(OBJ));
         OBJ_IDX const s = CR->car;
         assert(PTR(s)->tag >= OBJ_TAG_SYM);
-        OBJ const * i = DR;
-        if (OBJ_TAG_LEL == CR->tag) {
-            while (likely(i != NIL)) {
-                if (OBJ_TAG_NIL == i->tag) {
-                    i = PTR(i->sym);
-                    break;
-                }
-                i = CDR(i);
-            }
+        OBJ const * i = search_var(DR,s);
+
+        switch (i->tag) {
+            case OBJ_TAG_NUM_REF:
+                i = CAR(i);
+                assert(i->tag == OBJ_TAG_NUM);
+                __attribute__((fallthrough));
+
+            case OBJ_TAG_NIL:
+            case OBJ_TAG_LST:
+            case OBJ_TAG_DEF: {
+                o->tag = i->tag;
+                o->cdr = IDX(SR);
+                o->i32 = i->i32;
+                SR = o;
+            } goto *next[(CR = CDR(CR))->tag];
+
+            case OBJ_TAG_NUM:
+            case OBJ_TAG_VAR:
+            case OBJ_TAG_LEV:
+            case OBJ_TAG_IF:
+            case OBJ_TAG_KWD$MIN ...  OBJ_TAG_KWD$MAX:
+            case OBJ_TAG_MOV:
+            case OBJ_TAG_SYM ... OBJ_TAG$MAX:
+                assert(0);
         }
-
-        while (likely(i != NIL)) {
-            if (i->sym == s) switch (i->tag) {
-                case OBJ_TAG_NUM_REF:
-                    i = CAR(i);
-                    assert(i->tag == OBJ_TAG_NUM);
-                    __attribute__((fallthrough));
-
-                case OBJ_TAG_NIL:
-                case OBJ_TAG_LST:
-                case OBJ_TAG_DEF: {
-                    o->tag = i->tag;
-                    o->cdr = IDX(SR);
-                    o->i32 = i->i32;
-                    SR = o;
-                } goto *next[(CR = CDR(CR))->tag];
-
-                case OBJ_TAG_NUM:
-                case OBJ_TAG_DYN:
-                case OBJ_TAG_LEX:
-                case OBJ_TAG_LED:
-                case OBJ_TAG_LEL:
-                case OBJ_TAG_IF:
-                case OBJ_TAG_KWD$MIN ...  OBJ_TAG_KWD$MAX:
-                case OBJ_TAG_MOV:
-                case OBJ_TAG_SYM ... OBJ_TAG$MAX:
-                    assert(0);
-                    __builtin_unreachable();
-            }
-            i = CDR(i);
-        }
-        // no found.
-        o->tag = OBJ_TAG_NIL;
-        o->car = o->sym = OBJ_IDX_NIL;
-        o->cdr = IDX(SR);
-        SR = o;
-    } goto *next[(CR = CDR(CR))->tag];
+    } __builtin_unreachable();
 
     I_KWD_let: {
         unsigned n = CR->tag - OBJ_TAG_KWD_let + 1;
         OBJ * o = gc_malloc(n * sizeof(OBJ));
         do {
-            assert(OBJ_TAG_DYN == CDR(CR)->tag);
+            assert(OBJ_TAG_VAR == CDR(CR)->tag);
             assert(SR);
             if (OBJ_TAG_NUM == SR->tag) {
                 o->tag = OBJ_TAG_NUM_REF;
