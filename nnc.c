@@ -31,7 +31,8 @@ typedef enum __attribute__((packed)) {
     OBJ_TAG_KWD_MUL,
     OBJ_TAG_KWD_eq,
     OBJ_TAG_KWD_dup,
-    OBJ_TAG_KWD$MAX = OBJ_TAG_KWD_dup,
+    OBJ_TAG_KWD_recurse,
+    OBJ_TAG_KWD$MAX = OBJ_TAG_KWD_recurse,
     OBJ_TAG_NUM_REF,
     OBJ_TAG_DEF,
     OBJ_TAG_MOV,
@@ -139,8 +140,8 @@ static OBJ heap[2][OBJ_IDX$MAX + 1] = {
 #define PTR(I) (&hp_top[I])
 #define NIL PTR(OBJ_IDX_NIL)
 
-#define CAR(P) PTR((P)->car)
-#define CDR(P) PTR((P)->cdr)
+#define CAR(X) _Generic(X,OBJ_IDX:car_idx,default:car_ptr)(X)
+#define CDR(X) _Generic(X,OBJ_IDX:cdr_idx,default:cdr_ptr)(X)
 #define CAAR(P) CAR(CAR(P))
 #define CADR(P) CAR(CDR(P))
 #define CDAR(P) CDR(CAR(P))
@@ -161,6 +162,11 @@ static OBJ const *          hp_top =  heap[0];
 static OBJ       * restrict hp     = &heap[0][hp_start];
 
 static const OBJ *SR,*CR,*DR;
+
+static inline OBJ const * car_idx(OBJ_IDX     const i) { return PTR(hp_top[i].car); }
+static inline OBJ const * car_ptr(OBJ const * const p) { return PTR(       p->car); }
+static inline OBJ const * cdr_idx(OBJ_IDX     const i) { return PTR(hp_top[i].cdr); }
+static inline OBJ const * cdr_ptr(OBJ const * const p) { return PTR(       p->cdr); }
 
     static OBJ_IDX
 gc_copy(
@@ -254,27 +260,27 @@ call(
     o->cdr = IDX(DR);
     o->car = IDX(CR);
     DR = o;
-    i = CAR(i);
-    assert(OBJ_TAG_LST == i->tag);
-    o->sym = i->car;
-    return CDR(i);
+    assert(i->tag == OBJ_TAG_DEF);
+    o->sym = IDX(i);
+    return CDAR(i);
 }
 
     static OBJ const *
-search_var(
+find_var(
     OBJ const *   i,
     OBJ_IDX const s)
 {
     while (likely(i != NIL)) {
+
         if (OBJ_TAG_NIL == i->tag) {
-            OBJ const * const found = search_var(PTR(i->sym),s);
-            if (found != NIL) {
-                return found;
-            }
+            i = CAAR(i->sym);
+            continue;
         }
-        else if (i->sym == s) {
+
+        if (i->sym == s) {
             return i;
         }
+
         i = CDR(i);
     }
     return NIL;
@@ -284,23 +290,24 @@ search_var(
 eval(void)
 {
     static void const * const next[] = {
-        [ OBJ_TAG_NIL        ] = &&I_NIL,
-        [ OBJ_TAG_LST        ] = &&I_cp,
-        [ OBJ_TAG_NUM        ] = &&I_cp,
-        [ OBJ_TAG_VAR        ] = &&I_VAR,
-        [ OBJ_TAG_LEV        ] = &&I_LEV,
-        [ OBJ_TAG_IF         ] = &&I_IF,
+        [ OBJ_TAG_NIL         ] = &&I_NIL,
+        [ OBJ_TAG_LST         ] = &&I_cp,
+        [ OBJ_TAG_NUM         ] = &&I_cp,
+        [ OBJ_TAG_VAR         ] = &&I_VAR,
+        [ OBJ_TAG_LEV         ] = &&I_LEV,
+        [ OBJ_TAG_IF          ] = &&I_IF,
         [ OBJ_TAG_KWD_let ...
-          OBJ_TAG_KWD_3let   ] = &&I_KWD_let,
-        [ OBJ_TAG_KWD_call   ] = &&I_KWD_call,
-        [ OBJ_TAG_KWD_def    ] = &&I_KWD_def,
-        [ OBJ_TAG_KWD_PLUS   ] = &&I_KWD_PLUS,
-        [ OBJ_TAG_KWD_DOT    ] = &&I_KWD_DOT,
-        [ OBJ_TAG_KWD_LT     ] = &&I_KWD_LT,
-        [ OBJ_TAG_KWD_1MINUS ] = &&I_KWD_1MINUS,
-        [ OBJ_TAG_KWD_MUL    ] = &&I_KWD_MUL,
-        [ OBJ_TAG_KWD_eq     ] = &&I_KWD_eq,
-        [ OBJ_TAG_KWD_dup    ] = &&I_KWD_dup,
+          OBJ_TAG_KWD_3let    ] = &&I_KWD_let,
+        [ OBJ_TAG_KWD_call    ] = &&I_KWD_call,
+        [ OBJ_TAG_KWD_def     ] = &&I_KWD_def,
+        [ OBJ_TAG_KWD_PLUS    ] = &&I_KWD_PLUS,
+        [ OBJ_TAG_KWD_DOT     ] = &&I_KWD_DOT,
+        [ OBJ_TAG_KWD_LT      ] = &&I_KWD_LT,
+        [ OBJ_TAG_KWD_1MINUS  ] = &&I_KWD_1MINUS,
+        [ OBJ_TAG_KWD_MUL     ] = &&I_KWD_MUL,
+        [ OBJ_TAG_KWD_eq      ] = &&I_KWD_eq,
+        [ OBJ_TAG_KWD_dup     ] = &&I_KWD_dup,
+        [ OBJ_TAG_KWD_recurse ] = &&I_KWD_recurse,
     };
 
     _Static_assert(COUNTOF(next) == OBJ_TAG_KWD$MAX + 1);
@@ -328,25 +335,27 @@ eval(void)
         OBJ * const o = gc_malloc(sizeof(OBJ));
         OBJ_IDX const s = CR->car;
         assert(PTR(s)->tag >= OBJ_TAG_SYM);
-        OBJ const * i = search_var(DR,s);
+        OBJ const * i = find_var(DR,s);
 
         switch (i->tag) {
+
             case OBJ_TAG_NUM_REF:
+                o->tag = i->tag;
                 i = CAR(i);
                 assert(i->tag == OBJ_TAG_NUM);
                 __attribute__((fallthrough));
 
             case OBJ_TAG_NIL:
-            case OBJ_TAG_LST: {
+            case OBJ_TAG_LST:
                 o->tag = i->tag;
                 o->cdr = IDX(SR);
                 o->i32 = i->i32;
                 SR = o;
-            } goto *next[(CR = CDR(CR))->tag];
+                goto *next[(CR = CDR(CR))->tag];
 
-            case OBJ_TAG_DEF: {
+            case OBJ_TAG_DEF:
                 CR = call(o,i);
-            } goto *next[CR->tag];
+                goto *next[CR->tag];
 
             case OBJ_TAG_NUM:
             case OBJ_TAG_VAR:
@@ -355,15 +364,15 @@ eval(void)
             case OBJ_TAG_KWD$MIN ...  OBJ_TAG_KWD$MAX:
             case OBJ_TAG_MOV:
             case OBJ_TAG_SYM ... OBJ_TAG$MAX:
-                assert(0);
+                __builtin_unreachable();
         }
-    } __builtin_unreachable();
+    }
 
     I_LEV: {
         OBJ * const o = gc_malloc(sizeof(OBJ));
         OBJ_IDX const s = CR->car;
         assert(PTR(s)->tag >= OBJ_TAG_SYM);
-        OBJ const * i = search_var(DR,s);
+        OBJ const * i = find_var(DR,s);
 
         switch (i->tag) {
             case OBJ_TAG_NUM_REF:
@@ -387,9 +396,9 @@ eval(void)
             case OBJ_TAG_KWD$MIN ...  OBJ_TAG_KWD$MAX:
             case OBJ_TAG_MOV:
             case OBJ_TAG_SYM ... OBJ_TAG$MAX:
-                assert(0);
+                __builtin_unreachable();
         }
-    } __builtin_unreachable();
+    }
 
     I_KWD_let: {
         unsigned n = CR->tag - OBJ_TAG_KWD_let + 1;
@@ -520,6 +529,19 @@ eval(void)
         o->cdr = IDX(SR);
         o->i32 = SR->i32;
         SR = o;
+    } goto *next[(CR = CDR(CR))->tag];
+
+    I_KWD_recurse: {
+        OBJ * const o = gc_malloc(sizeof(OBJ));
+        for (OBJ const * i = DR; likely(i != NIL); i = CDR(i)) {
+            if (OBJ_TAG_NIL == i->tag) {
+                i = PTR(i->sym);
+                assert(i->tag == OBJ_TAG_DEF);
+                CR = call(o,i);
+                goto *next[CR->tag];
+            }
+        }
+        // TODO: o ga MUDA
     } goto *next[(CR = CDR(CR))->tag];
 }
 
