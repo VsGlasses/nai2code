@@ -1,7 +1,6 @@
 vim9script
 
 def Tarai(x: number, y: number, z: number): number
-  count += 1
   if x <= y
     return y
   endif
@@ -12,8 +11,6 @@ def Tarai(x: number, y: number, z: number): number
   )
 enddef
 
-var count = 0
 var start = reltime()
 echo Tarai(12, 6, 0)
-echo count
 echo reltimestr(reltime(start))

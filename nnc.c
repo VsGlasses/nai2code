@@ -337,7 +337,7 @@ eval(void)
         assert(PTR(s)->tag >= OBJ_TAG_SYM);
         OBJ const * i = find_var(DR,s);
 
-        switch (i->tag) {
+        switch (__builtin_expect(i->tag,OBJ_TAG_NUM_REF)) {
 
             case OBJ_TAG_NUM_REF:
                 o->tag = i->tag;
