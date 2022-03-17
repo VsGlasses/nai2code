@@ -1,14 +1,22 @@
-TARGET = nnc
-
-CC = clang-13
-
 .DELETE_ON_ERROR :
 
-$(TARGET) : $(TARGET).c makefile bootstrap.inc
-#	$(CC) $< -o $@ -Weverything -g -Os -fsanitize=undefined,address,leak
-#	$(CC) $< -o $@ -Weverything -g -Os -fsanitize=undefined,memory
-	$(CC) $< -o $@ -Weverything -g -Ofast -march=native -DNDEBUG
+CC = clang-13
+CFLAGS = -Weverything -g
+CFLAGS += -Ofast -march=native -flto
+CFLAGS += -fsanitize=undefined,address,leak
+#CFLAGS += -fsanitize=undefined,memory
+#CFLAGS += -DNDEBUG
+
+all : nnc srm.so
+
+nnc : nnc.c nnc.h bootstrap.inc
+	$(CC) $< -o $@ $(CFLAGS) -ldl
+
+%.so : %.c
+	$(CC) $< -o $@ $(CFLAGS) -shared -fPIC
+
+srm.so : srm.c nnc.h
 
 .PHONY : clean
 clean :
-	$(RM) $(TARGET)
+	$(RM) nnc *.so
