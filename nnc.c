@@ -109,8 +109,23 @@ static inline OBJ const * car_ptr(OBJ const * const p) { return PTR(       p->ca
 static inline OBJ const * cdr_idx(IDX const         i) { return PTR(hp_top[i].cdr); }
 static inline OBJ const * cdr_ptr(OBJ const * const p) { return PTR(       p->cdr); }
 
-static inline size_t nOBJs(size_t const nbytes) { return (nbytes + OBJ_SIZE_MASK) >> OBJ_SIZE_BITS; }
-static inline void gc_unmalloc(size_t const s) { hp -= nOBJs(s); }
+    static IDX
+nOBJs(size_t const nbytes)
+{
+    assert((IDX$MAX << OBJ_SIZE_BITS) >= nbytes);
+    return (IDX)((nbytes + OBJ_SIZE_MASK) >> OBJ_SIZE_BITS);
+}
+
+    static size_t
+obj_len(OBJ const * const o)
+{
+    if (TAG_MOV > o->tag) {
+        return sizeof(OBJ);
+    } else if (TAG_SYM > o->tag) {
+        return sizeof(OBJ) * 2;
+    }
+    return __builtin_offsetof(OBJ,str) + (o->tag - TAG_SYM);
+}
 
     static IDX
 gc_copy(
@@ -123,21 +138,12 @@ gc_copy(
 
     if (TAG_MOV == o->tag) return o->cdr;
 
-    if (TAG_MOV > o->tag) {
-        __builtin_memcpy(hp,o,sizeof(OBJ));
-        o->cdr = IDX(hp++);
-    } else if (TAG_SYM > o->tag) {
-        __builtin_memcpy(hp,o,sizeof(OBJ) * 2);
-        o->cdr = IDX(hp);
-        hp += 2;
-    } else {
-        const size_t len = __builtin_offsetof(OBJ,str) + (o->tag - TAG_SYM);
-        __builtin_memcpy(hp,o,len);
-        o->cdr = IDX(hp);
-        hp += nOBJs(len);
-    }
-
+    const size_t len = obj_len(o);
+    __builtin_memcpy(hp,o,len);
     o->tag = TAG_MOV;
+    o->cdr = IDX(hp);
+    o->car = nOBJs(len);
+    hp += o->car;
     return o->cdr;
 }
 
@@ -171,8 +177,6 @@ gc_malloc(size_t const s)
         case TAG_DEF:
         case TAG_DLH_REF:
         case TAG_SBR_REF:
-        case TAG_DLH:
-        case TAG_SBR:
             o->sym = gc_copy(prev_top,o->sym);
             __attribute__((fallthrough));
 
@@ -184,16 +188,24 @@ gc_malloc(size_t const s)
 
         case TAG_NUM:
         case TAG_KWD$MIN ... TAG_KWD$MAX:
-             o->cdr = gc_copy(prev_top,o->cdr);
-             ++o;
-             continue;
-
-        case TAG_SYM ... TAG$MAX:
-            o += nOBJs(__builtin_offsetof(OBJ,str) + (o->tag - TAG_SYM));
+            o->cdr = gc_copy(prev_top,o->cdr);
+            ++o;
             continue;
 
         case TAG_MOV:
             __builtin_unreachable();
+
+        case TAG_DLH:
+        case TAG_SBR:
+            o->sym = gc_copy(prev_top,o->sym);
+            o->car = gc_copy(prev_top,o->car);
+            o->cdr = gc_copy(prev_top,o->cdr);
+            o += 2;
+            continue;
+
+        case TAG_SYM ... TAG$MAX:
+            o += nOBJs(__builtin_offsetof(OBJ,str) + (o->tag - TAG_SYM));
+            continue;
     }
 
     //printf("gc_end:%ld use\n",hp - hp_top);
@@ -202,6 +214,12 @@ gc_malloc(size_t const s)
     o = hp;
     hp += nOBJs(s);
     return o;
+}
+
+    static void
+gc_unmalloc(size_t const s)
+{
+    hp -= nOBJs(s);
 }
 
     static OBJ const *
