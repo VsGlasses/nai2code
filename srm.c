@@ -14,13 +14,16 @@ hoge(
     printf("hoge:o->tag = %d\n",o->tag);
 }
 
-static void constructor(void)
+    static void
+constructor(void)
 {
-    printf ("constructor called\n");
+    printf("constructor called\n");
 }
 
-static void destructor(void)
+    static void
+destructor(void)
 {
-    printf ("destructor called\n");
+    printf("destructor called\n");
 }
+
 // vim:et:ts=4 sw=0 isk+=$ fmr=///,//;

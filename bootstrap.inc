@@ -48,7 +48,8 @@ L(hoge)		ASM(KWD_def)
 		ASM(VAR,sym_srm_so)
 		ASM(KWD_dlsym)
 		ASM(VAR,sym_hoge)
-		ASM(KWD_call,0,0)
+		ASM(KWD_call)
+		ASM(KWD_gc,0,0)
 L(hp_start)
 
 /*

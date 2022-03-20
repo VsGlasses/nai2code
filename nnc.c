@@ -147,22 +147,15 @@ gc_copy(
     return o->cdr;
 }
 
-    static OBJ *
-gc_malloc(size_t const s)
+    static void
+gc(void)
 {
-    assert(s);
+    OBJ * const prev_top = heap[hp_top != heap[0]],
+        * const next_top = heap[hp_top == heap[0]],
+        * const restrict prev_hp = hp,
+        * o = hp = next_top + IDX$GC_TOP;
 
-    if ((COUNTOF(heap[0]) - (size_t)(hp - hp_top)) * sizeof(OBJ) >= s) {
-        OBJ * const o = hp;
-        _Static_assert(COUNTOF(heap[0]) * sizeof(OBJ) <= SIZE_MAX - OBJ_SIZE_MASK);
-        hp += nOBJs(s);
-        return o;
-    }
-
-    OBJ * const prev_top = heap[hp_top != heap[0]];
-    OBJ * const next_top = heap[hp_top == heap[0]];
-
-    OBJ * o = hp = next_top + IDX$GC_TOP;
+    assert(hp_top == prev_top);
     hp_top = next_top;
 
     SR = PTR(gc_copy(prev_top,(IDX)(SR - prev_top)));
@@ -208,10 +201,52 @@ gc_malloc(size_t const s)
             continue;
     }
 
+    // destructors
+    o = prev_top;
+    while (unlikely(o < prev_hp)) switch (o->tag) {
+
+        case TAG_NIL ... TAG_SBR_REF:
+            ++o;
+            continue;
+
+        case TAG_MOV:
+            o += o->car;
+            continue;
+
+        case TAG_DLH:
+            if (unlikely(dlclose(*o->dlh))) {
+                fputs(dlerror(),stderr);
+            }
+            __attribute__((fallthrough));
+
+        case TAG_SBR:
+            o += 2;
+            continue;
+
+        case TAG_SYM ... TAG$MAX:
+            o += nOBJs(__builtin_offsetof(OBJ,str) + (o->tag - TAG_SYM));
+            continue;
+    }
+
     //printf("gc_end:%ld use\n",hp - hp_top);
+}
+
+    static OBJ *
+gc_malloc(size_t const s)
+{
+    assert(s);
+
+    if ((COUNTOF(heap[0]) - (size_t)(hp - hp_top)) * sizeof(OBJ) >= s) {
+        OBJ * const o = hp;
+        _Static_assert(COUNTOF(heap[0]) * sizeof(OBJ) <= SIZE_MAX - OBJ_SIZE_MASK);
+        hp += nOBJs(s);
+        return o;
+    }
+
+    gc();
 
     assert((COUNTOF(heap[0]) - (size_t)(hp - hp_top)) * sizeof(OBJ) >= s);
-    o = hp;
+    OBJ * const o = hp;
     hp += nOBJs(s);
     return o;
 }
@@ -290,6 +325,7 @@ eval(void)
         [ TAG_KWD_dup    ] = &&I_KWD_dup,
         [ TAG_KWD_dlopen ] = &&I_KWD_dlopen,
         [ TAG_KWD_dlsym  ] = &&I_KWD_dlsym,
+        [ TAG_KWD_gc     ] = &&I_KWD_gc,
     };
 
     _Static_assert(COUNTOF(next) == TAG_KWD$MAX + 1);
@@ -628,6 +664,10 @@ eval(void)
         o->car = IDX(d);
         SR = o;
     } goto *next[(CR = CDDR(CR))->tag];
+
+    I_KWD_gc: {
+        gc();
+    } goto *next[(CR = CDR(CR))->tag];
 }
 
     int
