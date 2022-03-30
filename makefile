@@ -1,5 +1,7 @@
 .DELETE_ON_ERROR :
 
+TARGET = nnc bootstrap bootstrap.h srm.so
+
 CC = clang-13
 CFLAGS = -Weverything -g
 CFLAGS += -Ofast -march=native -flto
@@ -7,10 +9,16 @@ CFLAGS += -fsanitize=undefined,address,leak
 #CFLAGS += -fsanitize=undefined,memory
 #CFLAGS += -DNDEBUG
 
-all : nnc srm.so
+all : $(TARGET)
 
-nnc : nnc.c nnc.h bootstrap.inc
+nnc : nnc.c nnc.h bootstrap.h
 	$(CC) $< -o $@ $(CFLAGS) -ldl
+
+bootstrap.h : bootstrap
+	./bootstrap > $@
+
+bootstrap : bootstrap.c nnc.h
+	$(CC) $< -o $@ $(CFLAGS)
 
 %.so : %.c
 	$(CC) $< -o $@ $(CFLAGS) -shared -fPIC
@@ -19,4 +27,4 @@ srm.so : srm.c nnc.h
 
 .PHONY : clean
 clean :
-	$(RM) nnc *.so
+	$(RM) $(TARGET)

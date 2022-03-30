@@ -12,73 +12,27 @@
 #pragma GCC diagnostic ignored "-Wgnu-designator"
 #pragma GCC diagnostic ignored "-Wvla"
 
-/// PASS-1
-enum {
+static union {
+    OBJ            obj[ IDX$MAX + 1];
+    uint16_t const u16[(IDX$MAX + 1) * (sizeof(OBJ) / sizeof(uint16_t))];
+} heap[2] = {
+    { .u16 = {
+        TAG_NIL,/* cdr */IDX_NIL,/* sym */IDX_SYM_ATret,/* car */IDX_NIL,
+        TAG_SYM + sizeof("@ret") - sizeof(""),'@' | ('r' << 8),'e' | ('t' << 8),0,
 
-#define ASM(...)
-#define I32(...)
-#define STR(...)
-#define L(n) n = (NEXT - 1),
-#define GENSYM
-#define NEXT (IDX$GC_TOP + __LINE__)
+#include "bootstrap.h"
 
-#include "bootstrap.inc"
-
-#undef ASM
-#undef I32
-#undef STR
-#undef L
-#undef GENSYM
-#undef NEXT
-
+    } },{ .u16 = {
+        TAG_NIL,/* cdr */IDX_NIL,/* sym */IDX_SYM_ATret,/* car */IDX_NIL,
+        TAG_SYM + sizeof("@ret") - sizeof(""),'@' | ('r' << 8),'e' | ('t' << 8),0,
+    } }
 };
 
-//;
-/// PASS-2
-#define ASM3(Tag,Car,Cdr) { TAG_ ## Tag,.car = (IDX)(Car),.cdr = (IDX)(Cdr),.sym = IDX_NIL },
-#define ASM2(Tag,Car) ASM3(Tag,Car,NEXT)
-#define ASM1(Tag) ASM2(Tag,IDX_NIL)
-#define ASM_OPT(Tag,Car,Cdr,ASMn,...) ASMn
-#define ASM(...) ASM_OPT(__VA_ARGS__,ASM3,ASM2,ASM1)(__VA_ARGS__)
-#define I32_2(Num,Cdr) { TAG_NUM,.cdr = (IDX)(Cdr),.i32 = (Num) },
-#define I32_1(Num) I32_2(Num,NEXT)
-#define I32_OPT(Num,Cdr,I32n,...) I32n
-#define I32(...) I32_OPT(__VA_ARGS__,I32_2,I32_1)(__VA_ARGS__)
-#define STR(Str) { (TAG)(TAG_SYM + sizeof(Str) - sizeof("")),.str_ini = (Str) },
-#define L(...)
-#define GENSYM { .tag = TAG_SYM },
-
-static OBJ heap[2][IDX$MAX + 1] = {
-    {
-        { TAG_NIL,.car = IDX_NIL,.cdr = IDX_NIL,.sym = IDX_SYM_ATret },
-        STR("@ret")
-#define NEXT (IDX$GC_TOP + __LINE__)
-#include "bootstrap.inc"
-#undef NEXT
-    },{
-        { TAG_NIL,.car = IDX_NIL,.cdr = IDX_NIL,.sym = IDX_SYM_ATret },
-        STR("@ret")
-    }
-};
-
-#undef ASM3
-#undef ASM2
-#undef ASM1
-#undef ASM_OPT
-#undef ASM
-#undef I32_2
-#undef I32_1
-#undef I32_OPT
-#undef I32
-#undef STR
-#undef L
-#undef GENSYM
-//;
+_Static_assert(sizeof(heap->obj) == sizeof(heap->u16));
 
 #define COUNTOF(array) (sizeof(array) / sizeof(0[array]))
 
 #define IDX(P) ((IDX)((P) - hp_top))
-#define PTR(I) (&hp_top[I])
 #define PTR_NIL PTR(IDX_NIL)
 
 #define CAR(X) _Generic(X,IDX:car_idx,default:car_ptr)(X)
@@ -99,8 +53,11 @@ static OBJ heap[2][IDX$MAX + 1] = {
 #   define unlikely(x) __builtin_expect(!!(x),1)
 #endif
 
-static OBJ const *          hp_top =  heap[0];
-static OBJ       * restrict hp     = &heap[0][hp_start];
+static OBJ const *          hp_top =  heap->obj;
+static OBJ       * restrict hp     = &heap->obj[ORG_HP];
+
+static inline OBJ const * PTR(IDX I) __attribute__((assume_aligned(sizeof(OBJ),sizeof(OBJ))));
+static inline OBJ const * PTR(IDX I) { return &hp_top[I]; }
 
 static const OBJ *SR,*CR,*DR;
 
@@ -150,8 +107,8 @@ gc_copy(
     static void
 gc(void)
 {
-    OBJ * const prev_top = heap[hp_top != heap[0]],
-        * const next_top = heap[hp_top == heap[0]],
+    OBJ * const prev_top = heap[hp_top != heap->obj].obj,
+        * const next_top = heap[hp_top == heap->obj].obj,
         * const restrict prev_hp = hp,
         * o = hp = next_top + IDX$GC_TOP;
 
@@ -231,21 +188,23 @@ gc(void)
     //printf("gc_end:%ld use\n",hp - hp_top);
 }
 
+static OBJ * gc_malloc(size_t const) __attribute__((assume_aligned(sizeof(OBJ),sizeof(OBJ))));
+
     static OBJ *
 gc_malloc(size_t const s)
 {
     assert(s);
 
-    if ((COUNTOF(heap[0]) - (size_t)(hp - hp_top)) * sizeof(OBJ) >= s) {
+    if ((COUNTOF(heap->obj) - (size_t)(hp - hp_top)) * sizeof(OBJ) >= s) {
         OBJ * const o = hp;
-        _Static_assert(COUNTOF(heap[0]) * sizeof(OBJ) <= SIZE_MAX - OBJ_SIZE_MASK);
+        _Static_assert(COUNTOF(heap->obj) * sizeof(OBJ) <= SIZE_MAX - OBJ_SIZE_MASK);
         hp += nOBJs(s);
         return o;
     }
 
     gc();
 
-    assert((COUNTOF(heap[0]) - (size_t)(hp - hp_top)) * sizeof(OBJ) >= s);
+    assert((COUNTOF(heap->obj) - (size_t)(hp - hp_top)) * sizeof(OBJ) >= s);
     OBJ * const o = hp;
     hp += nOBJs(s);
     return o;
@@ -674,7 +633,7 @@ eval(void)
 main(void)
 {
     SR = DR = PTR_NIL;
-    CR = PTR(bs_start);
+    CR = PTR(ORG_BS);
 
     eval();
 

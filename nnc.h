@@ -68,7 +68,6 @@ struct NNC_(OBJ) {
    NNC_(TAG) tag;
     union {
         uint8_t str[0];
-        const uint8_t str_ini[6];
         struct __attribute__((packed)) {
             NNC_(IDX) cdr;
             union {
