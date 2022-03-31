@@ -99,6 +99,12 @@ struct NNC_(STATE) {
     NNC_(OBJ) * (*gc_malloc)(size_t);
 };
 
+    static inline NNC_(IDX)
+NNC_(nOBJs)(size_t const nbytes)
+{
+    return (NNC_(IDX))((nbytes + NNC_(OBJ_SIZE_MASK)) >> NNC_(OBJ_SIZE_BITS));
+}
+
 #undef NNC_
 
 // vim:et:ts=4 sw=0 isk+=$ fmr=///,//;

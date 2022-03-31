@@ -24,7 +24,7 @@ gen_sym(char const * s)
     assert((TAG$MAX - TAG_SYM) >= len);
     o->tag = TAG_SYM + (TAG)len;
     __builtin_memcpy(o->str,s,len);
-    hi += (__builtin_offsetof(OBJ,str) + len + OBJ_SIZE_MASK) >> OBJ_SIZE_BITS;
+    hi += nOBJs(__builtin_offsetof(OBJ,str) + len);
     return o;
 }
 
@@ -106,7 +106,7 @@ main(void)
                 case TAG_SYM ... TAG$MAX: {
                    uint16_t const len = *u++ - TAG_SYM;
                     printf("TAG_SYM + %u,",len);
-                    int count = NumberOfU16InOBJ * ((__builtin_offsetof(OBJ,str) + len + OBJ_SIZE_MASK) >> OBJ_SIZE_BITS) - 1;
+                    int count = NumberOfU16InOBJ * nOBJs(__builtin_offsetof(OBJ,str) + len) - 1;
                     do {
                         uint16_t const n = *u++;
                         printf("0x%04X /* %c%c */,",n,n & 0xFF,n >> 8);

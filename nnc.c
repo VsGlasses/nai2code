@@ -12,6 +12,12 @@
 #pragma GCC diagnostic ignored "-Wgnu-designator"
 #pragma GCC diagnostic ignored "-Wvla"
 
+#if defined(NDEBUG)
+#undef assert
+#define assert(t) __builtin_assume(t)
+#pragma GCC diagnostic ignored "-Wassume"
+#endif
+
 static union {
     OBJ            obj[ IDX$MAX + 1];
     uint16_t const u16[(IDX$MAX + 1) * (sizeof(OBJ) / sizeof(uint16_t))];
@@ -65,13 +71,6 @@ static inline OBJ const * car_idx(IDX const         i) { return PTR(hp_top[i].ca
 static inline OBJ const * car_ptr(OBJ const * const p) { return PTR(       p->car); }
 static inline OBJ const * cdr_idx(IDX const         i) { return PTR(hp_top[i].cdr); }
 static inline OBJ const * cdr_ptr(OBJ const * const p) { return PTR(       p->cdr); }
-
-    static IDX
-nOBJs(size_t const nbytes)
-{
-    assert((IDX$MAX << OBJ_SIZE_BITS) >= nbytes);
-    return (IDX)((nbytes + OBJ_SIZE_MASK) >> OBJ_SIZE_BITS);
-}
 
     static size_t
 obj_len(OBJ const * const o)
