@@ -62,12 +62,12 @@ _Static_assert(sizeof(NNC_(IDX)) == sizeof(uint16_t));
 typedef struct NNC_(OBJ)   NNC_(OBJ);
 typedef struct NNC_(STATE) NNC_(STATE);
 
-typedef void NNC_(SBR)(NNC_(STATE) const *,NNC_(OBJ) const *);
+typedef void NNC_(SBR)(NNC_(STATE) const *);
 
 struct NNC_(OBJ) {
    NNC_(TAG) tag;
     union {
-        uint8_t str[0];
+        char str[0];
         struct __attribute__((packed)) {
             NNC_(IDX) cdr;
             union {
@@ -96,13 +96,23 @@ _Static_assert(sizeof(NNC_(OBJ)) == 1 << NNC_(OBJ_SIZE_BITS));
 _Static_assert(sizeof(NNC_(OBJ)) * 2 == __builtin_offsetof(NNC_(OBJ),dlh[1]));
 
 struct NNC_(STATE) {
-    NNC_(OBJ) * (*gc_malloc)(size_t);
+    NNC_(OBJ)       * (*gc_malloc)(size_t);
+    NNC_(OBJ) const * (*SR)(void);
+    NNC_(OBJ) const * (*CR)(void);
+    NNC_(OBJ) const * (*DR)(void);
+    NNC_(OBJ) const * (*PTR)(NNC_(IDX));
 };
 
     static inline NNC_(IDX)
 NNC_(nOBJs)(size_t const nbytes)
 {
     return (NNC_(IDX))((nbytes + NNC_(OBJ_SIZE_MASK)) >> NNC_(OBJ_SIZE_BITS));
+}
+
+    static inline size_t
+NNC_(sym_len)(NNC_(TAG) const t)
+{
+    return __builtin_offsetof(NNC_(OBJ),str) + (t - NNC_(TAG_SYM)) + sizeof("");
 }
 
 #undef NNC_

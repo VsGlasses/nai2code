@@ -17,13 +17,14 @@ static IDX hi = IDX$GC_TOP;
 _Static_assert(NumberOfU16InOBJ == sizeof(OBJ) / sizeof(uint16_t));
 
     static OBJ *
-gen_sym(char const s[])
+gen_sym(char const * s)
 {
+    OBJ * const o = PTR(hi);
     size_t const len = __builtin_strlen(s);
     assert((TAG$MAX - TAG_SYM) >= len);
-    OBJ * const o = PTR(hi);
-    hi += nOBJs(sym_len(o->tag = TAG_SYM + (TAG)len));
-    __builtin_memcpy(o->str,s,len + sizeof(""));
+    o->tag = TAG_SYM + (TAG)len;
+    __builtin_memcpy(o->str,s,len);
+    hi += nOBJs(__builtin_offsetof(OBJ,str) + len);
     return o;
 }
 
@@ -49,18 +50,39 @@ gen(
     int
 main(void)
 {
-    IDX const sym_srm_so        = IDX(gen_sym("srm.so"));
-    IDX const sym_Open          = IDX(gen_sym("Open"));
-    IDX const sym_bootstrap_nnc = IDX(gen_sym("bootstrap.nnc"));
+    OBJ *o;
+
+    IDX const sym_x     = IDX(gen_sym(""));
+    IDX const sym_y     = IDX(gen_sym(""));
+    IDX const sym_z     = IDX(gen_sym(""));
+    IDX const sym_tarai = IDX(gen_sym(""));
 
     printf("#define ORG_BS ((IDX)%d)\n",hi);
 
-        GEN(KWD_dlopen);
-        GAR(VAR,sym_srm_so);
-        GEN(KWD_dlsym);
-        GAR(VAR,sym_Open);
-        GEN(KWD_call);
-        GDA(VAR,IDX_NIL,sym_bootstrap_nnc);
+    o = GAR(LST,hi + 1);
+
+        IDX const tarai = hi;
+        GEN(KWD_3let); GAR(VAR,sym_z); GAR(VAR,sym_y); GAR(VAR,sym_x);
+
+        GAR(VAR,sym_y);
+        GAR(VAR,sym_x);
+        GEN(KWD_LT);
+        GAR(IF,hi + 2);
+        GDA(VAR,IDX_NIL,sym_y);
+
+        GAR(VAR,sym_x); GEN(KWD_1MINUS); GAR(VAR,sym_y); GAR(VAR,sym_z); GAR(CALL,tarai);
+        GAR(VAR,sym_y); GEN(KWD_1MINUS); GAR(VAR,sym_z); GAR(VAR,sym_x); GAR(CALL,tarai);
+        GAR(VAR,sym_z); GEN(KWD_1MINUS); GAR(VAR,sym_x); GAR(VAR,sym_y); GDA(CALL,tarai,tarai);
+
+    o->cdr = hi;
+
+        GEN(KWD_def); GEN(KWD_let); GAR(VAR,sym_tarai);
+
+        GEN(NUM)->i32 = 12;
+        GEN(NUM)->i32 = 6;
+        GEN(NUM)->i32 = 0;
+        GAR(VAR,sym_tarai);
+        GDA(KWD_DOT,IDX_NIL,IDX_NIL);
 
     printf("#define ORG_HP (%d)\n",hi);
 
@@ -81,14 +103,10 @@ main(void)
                 CASE(KWD_3let);
                 CASE(KWD_LT);
                 CASE(KWD_DOT);
-                CASE(KWD_dlopen);
-                CASE(KWD_dlsym);
-                CASE(KWD_call);
-
                 case TAG_SYM ... TAG$MAX: {
-                    TAG const t = *u++;
-                    printf("TAG_SYM + %u,",t - TAG_SYM);
-                    int count = NumberOfU16InOBJ * nOBJs(sym_len(t)) - 1;
+                   uint16_t const len = *u++ - TAG_SYM;
+                    printf("TAG_SYM + %u,",len);
+                    int count = NumberOfU16InOBJ * nOBJs(__builtin_offsetof(OBJ,str) + len) - 1;
                     do {
                         uint16_t const n = *u++;
                         printf("0x%04X /* %c%c */,",n,n & 0xFF,n >> 8);

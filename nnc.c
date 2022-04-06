@@ -24,13 +24,13 @@ static union {
 } heap[2] = {
     { .u16 = {
         TAG_NIL,/* cdr */IDX_NIL,/* sym */IDX_SYM_ATret,/* car */IDX_NIL,
-        TAG_SYM + sizeof("@ret") - sizeof(""),'@' | ('r' << 8),'e' | ('t' << 8),0,
+        TAG_SYM + sizeof("@ret") - sizeof(""),'@' | ('r' << 8),'e' | ('t' << 8),'\0',
 
 #include "bootstrap.h"
 
     } },{ .u16 = {
         TAG_NIL,/* cdr */IDX_NIL,/* sym */IDX_SYM_ATret,/* car */IDX_NIL,
-        TAG_SYM + sizeof("@ret") - sizeof(""),'@' | ('r' << 8),'e' | ('t' << 8),0,
+        TAG_SYM + sizeof("@ret") - sizeof(""),'@' | ('r' << 8),'e' | ('t' << 8),'\0',
     } }
 };
 
@@ -75,12 +75,13 @@ static inline OBJ const * cdr_ptr(OBJ const * const p) { return PTR(       p->cd
     static size_t
 obj_len(OBJ const * const o)
 {
-    if (TAG_MOV > o->tag) {
+    TAG const t = o->tag;
+    if (TAG_MOV > t) {
         return sizeof(OBJ);
-    } else if (TAG_SYM > o->tag) {
+    } else if (TAG_SYM > t) {
         return sizeof(OBJ) * 2;
     }
-    return __builtin_offsetof(OBJ,str) + (o->tag - TAG_SYM);
+    return sym_len(t);
 }
 
     static IDX
@@ -153,7 +154,7 @@ gc(void)
             continue;
 
         case TAG_SYM ... TAG$MAX:
-            o += nOBJs(__builtin_offsetof(OBJ,str) + (o->tag - TAG_SYM));
+            o += nOBJs(sym_len(o->tag));
             continue;
     }
 
@@ -180,7 +181,7 @@ gc(void)
             continue;
 
         case TAG_SYM ... TAG$MAX:
-            o += nOBJs(__builtin_offsetof(OBJ,str) + (o->tag - TAG_SYM));
+            o += nOBJs(sym_len(o->tag));
             continue;
     }
 
@@ -257,7 +258,19 @@ find_var(
     }
 }
 
-static STATE const state = { gc_malloc };
+static const OBJ *SR,*CR,*DR;
+
+static OBJ const * get_SR(void) { return SR; }
+static OBJ const * get_CR(void) { return CR; }
+static OBJ const * get_DR(void) { return DR; }
+
+static STATE const state = {
+    gc_malloc,
+    get_SR,
+    get_CR,
+    get_DR,
+    PTR,
+};
 
     static void
 eval(void)
@@ -336,7 +349,7 @@ eval(void)
                 goto *next[CR->tag];
 
             case TAG_SBR_REF:
-                (*CAR(i)->sbr)(&state,i);
+                (*CAR(i)->sbr)(&state);
                 goto *next[(CR = CDR(CR))->tag];
 
             case TAG_NUM:
@@ -451,11 +464,10 @@ eval(void)
             SR = CDR(SR);
         } else {
             if (TAG_SBR == SR->tag) {
-                (*SR->sbr)(&state,SR);
+                (*SR->sbr)(&state);
                 SR = CDR(SR);
-            }
-            else if (TAG_SBR_REF == SR->tag) {
-                (*CAR(SR)->sbr)(&state,SR);
+            } else if (TAG_SBR_REF == SR->tag) {
+                (*CAR(SR)->sbr)(&state);
                 SR = CDR(SR);
             }
             CR = CDR(CR);
@@ -573,11 +585,7 @@ eval(void)
         assert(TAG_VAR == CDR(CR)->tag);
         OBJ const * const s = CADR(CR);
         assert(TAG_SYM < s->tag);
-        const size_t f_len = s->tag - TAG_SYM;
-        char f[f_len + sizeof("")];
-        __builtin_memcpy(f,s->str,f_len);
-        f[f_len] = '\0';
-        if (unlikely(!(*o->dlh = dlopen(f,RTLD_LAZY)))) {
+        if (unlikely(!(*o->dlh = dlopen(s->str,RTLD_LAZY)))) {
             gc_unmalloc(sizeof(OBJ) * 2);
             fputs(dlerror(),stderr);
             return;
@@ -600,14 +608,10 @@ eval(void)
         assert(TAG_VAR == CDR(CR)->tag);
         OBJ const * const s = CADR(CR);
         assert(TAG_SYM < s->tag);
-        const size_t f_len = s->tag - TAG_SYM;
-        char f[f_len + sizeof("")];
-        __builtin_memcpy(f,s->str,f_len);
-        f[f_len] = '\0';
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wpedantic"
-        *o->sbr = dlsym(*d->dlh,f);
+        *o->sbr = dlsym(*d->dlh,s->str);
 #pragma GCC diagnostic pop
 
         char const * const err = dlerror();
