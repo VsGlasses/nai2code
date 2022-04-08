@@ -171,7 +171,7 @@ gc(void)
             continue;
 
         case TAG_DLH:
-            if (unlikely(dlclose(*o->dlh))) {
+            if (unlikely(dlclose(o->ext->dlh))) {
                 fputs(dlerror(),stderr);
             }
             __attribute__((fallthrough));
@@ -349,7 +349,7 @@ eval(void)
                 goto *next[CR->tag];
 
             case TAG_SBR_REF:
-                (*CAR(i)->sbr)(&state);
+                (CAR(i)->ext->sbr)(&state);
                 goto *next[(CR = CDR(CR))->tag];
 
             case TAG_NUM:
@@ -464,10 +464,10 @@ eval(void)
             SR = CDR(SR);
         } else {
             if (TAG_SBR == SR->tag) {
-                (*SR->sbr)(&state);
+                (SR->ext->sbr)(&state);
                 SR = CDR(SR);
             } else if (TAG_SBR_REF == SR->tag) {
-                (*CAR(SR)->sbr)(&state);
+                (CAR(SR)->ext->sbr)(&state);
                 SR = CDR(SR);
             }
             CR = CDR(CR);
@@ -585,7 +585,7 @@ eval(void)
         assert(TAG_VAR == CDR(CR)->tag);
         OBJ const * const s = CADR(CR);
         assert(TAG_SYM < s->tag);
-        if (unlikely(!(*o->dlh = dlopen(s->str,RTLD_LAZY)))) {
+        if (unlikely(!(o->ext->dlh = dlopen(s->str,RTLD_LAZY)))) {
             gc_unmalloc(sizeof(OBJ) * 2);
             fputs(dlerror(),stderr);
             return;
@@ -609,10 +609,7 @@ eval(void)
         OBJ const * const s = CADR(CR);
         assert(TAG_SYM < s->tag);
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wpedantic"
-        *o->sbr = dlsym(*d->dlh,s->str);
-#pragma GCC diagnostic pop
+        o->ext->ptr /* sbr */ = dlsym(d->ext->dlh,s->str);
 
         char const * const err = dlerror();
         if (unlikely(err)) {

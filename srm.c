@@ -66,7 +66,10 @@ Open(
             fd = -1;
             return;
         }
-        len = (size_t)fstat_result.st_size;
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wsign-conversion"
+        len = fstat_result.st_size;
+#pragma GCC diagnostic pop
     }
 
     if (MAP_FAILED == (addr = mmap(NULL,len,PROT_READ,MAP_PRIVATE,fd,0))) {
@@ -77,6 +80,12 @@ Open(
     }
 
     printf("%.*s\n",(int)len,addr);
+}
+
+    void
+Getchar(
+    NNC_STATE const * const st)
+{
 }
 
     static void

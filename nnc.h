@@ -4,8 +4,10 @@
 
 #pragma GCC diagnostic ignored "-Wdollar-in-identifier-extension"
 #pragma GCC diagnostic ignored "-Wc2x-extensions"
-#pragma GCC diagnostic ignored "-Wzero-length-array"
 #pragma GCC diagnostic ignored "-Wc++-compat"
+#pragma GCC diagnostic ignored "-Wdeclaration-after-statement"
+#pragma GCC diagnostic ignored "-Wgnu-variable-sized-type-not-at-end"
+#pragma GCC diagnostic ignored "-Wflexible-array-extensions"
 
 #if !defined(NNC_)
 #define NNC_(n) NNC_ ## n
@@ -59,33 +61,30 @@ typedef enum __attribute__((packed)) {
 
 _Static_assert(sizeof(NNC_(IDX)) == sizeof(uint16_t));
 
-typedef struct NNC_(OBJ)   NNC_(OBJ);
 typedef struct NNC_(STATE) NNC_(STATE);
-
 typedef void NNC_(SBR)(NNC_(STATE) const *);
 
-struct NNC_(OBJ) {
-   NNC_(TAG) tag;
+typedef struct {
+    struct {
+        NNC_(TAG) tag;
+        char      str[];
+    };
+    NNC_(IDX) cdr;
     union {
-        char str[0];
-        struct __attribute__((packed)) {
-            NNC_(IDX) cdr;
-            union {
-                struct {
-                    NNC_(IDX) sym;
-                    NNC_(IDX) car;
-                };
-                 int32_t i32;
-                uint32_t u32;
-                float    f32;
-            };
+        struct {
+            NNC_(IDX) sym;
+            NNC_(IDX) car;
         };
+         int32_t i32;
+        uint32_t u32;
+        float    f32;
     };
     union {
-        void      *dlh[0]; // dlopen() handle
-        NNC_(SBR) *sbr[0];
-    };
-};
+        void      *ptr;
+        void      *dlh; // dlopen() handle
+        NNC_(SBR) *sbr;
+    } ext[];
+} NNC_(OBJ);
 
 enum {
     NNC_(OBJ_SIZE_BITS) = 3,
@@ -93,7 +92,7 @@ enum {
 };
 
 _Static_assert(sizeof(NNC_(OBJ)) == 1 << NNC_(OBJ_SIZE_BITS));
-_Static_assert(sizeof(NNC_(OBJ)) * 2 == __builtin_offsetof(NNC_(OBJ),dlh[1]));
+_Static_assert(sizeof(NNC_(OBJ)) * 2 == __builtin_offsetof(NNC_(OBJ),ext[1]));
 
 struct NNC_(STATE) {
     NNC_(OBJ)       * (*gc_malloc)(size_t);

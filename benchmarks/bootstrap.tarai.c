@@ -17,14 +17,13 @@ static IDX hi = IDX$GC_TOP;
 _Static_assert(NumberOfU16InOBJ == sizeof(OBJ) / sizeof(uint16_t));
 
     static OBJ *
-gen_sym(char const * s)
+gen_sym(char const s[])
 {
-    OBJ * const o = PTR(hi);
     size_t const len = __builtin_strlen(s);
     assert((TAG$MAX - TAG_SYM) >= len);
-    o->tag = TAG_SYM + (TAG)len;
-    __builtin_memcpy(o->str,s,len);
-    hi += nOBJs(__builtin_offsetof(OBJ,str) + len);
+    OBJ * const o = PTR(hi);
+    hi += nOBJs(sym_len(o->tag = TAG_SYM + (TAG)len));
+    __builtin_memcpy(o->str,s,len + sizeof(""));
     return o;
 }
 
@@ -103,10 +102,14 @@ main(void)
                 CASE(KWD_3let);
                 CASE(KWD_LT);
                 CASE(KWD_DOT);
+                CASE(KWD_dlopen);
+                CASE(KWD_dlsym);
+                CASE(KWD_call);
+
                 case TAG_SYM ... TAG$MAX: {
-                   uint16_t const len = *u++ - TAG_SYM;
-                    printf("TAG_SYM + %u,",len);
-                    int count = NumberOfU16InOBJ * nOBJs(__builtin_offsetof(OBJ,str) + len) - 1;
+                    TAG const t = *u++;
+                    printf("TAG_SYM + %u,",t - TAG_SYM);
+                    int count = NumberOfU16InOBJ * nOBJs(sym_len(t)) - 1;
                     do {
                         uint16_t const n = *u++;
                         printf("0x%04X /* %c%c */,",n,n & 0xFF,n >> 8);

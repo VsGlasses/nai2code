@@ -2,7 +2,7 @@
 
 TARGET = nnc bootstrap bootstrap.h srm.so
 
-CC = clang-13
+CC = clang-14
 CFLAGS = -Weverything -g
 CFLAGS += -Ofast -march=native -flto
 CFLAGS += -fsanitize=undefined,address,leak
