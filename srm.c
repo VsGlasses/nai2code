@@ -10,6 +10,7 @@
 #pragma GCC diagnostic ignored "-Wvla"
 
 extern NNC_SBR Open;
+extern NNC_SBR GetChar;
 static void destructor(void) __attribute__((destructor));
 static void constructor(void) __attribute__((constructor));
 
@@ -83,7 +84,7 @@ Open(
 }
 
     void
-Getchar(
+GetChar(
     NNC_STATE const * const st)
 {
 }

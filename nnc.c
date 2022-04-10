@@ -10,7 +10,6 @@
 #pragma GCC diagnostic ignored "-Wgnu-case-range"
 #pragma GCC diagnostic ignored "-Wgnu-label-as-value"
 #pragma GCC diagnostic ignored "-Wgnu-designator"
-#pragma GCC diagnostic ignored "-Wvla"
 
 #if defined(NDEBUG)
 #undef assert
@@ -79,7 +78,7 @@ obj_len(OBJ const * const o)
     if (TAG_MOV > t) {
         return sizeof(OBJ);
     } else if (TAG_SYM > t) {
-        return sizeof(OBJ) * 2;
+        return OBJ_SIZE_PTR;
     }
     return sym_len(t);
 }
@@ -171,7 +170,7 @@ gc(void)
             continue;
 
         case TAG_DLH:
-            if (unlikely(dlclose(o->ext->dlh))) {
+            if (unlikely(dlclose(*o->dlh))) {
                 fputs(dlerror(),stderr);
             }
             __attribute__((fallthrough));
@@ -349,7 +348,7 @@ eval(void)
                 goto *next[CR->tag];
 
             case TAG_SBR_REF:
-                (CAR(i)->ext->sbr)(&state);
+                (*CAR(i)->sbr)(&state);
                 goto *next[(CR = CDR(CR))->tag];
 
             case TAG_NUM:
@@ -464,10 +463,10 @@ eval(void)
             SR = CDR(SR);
         } else {
             if (TAG_SBR == SR->tag) {
-                (SR->ext->sbr)(&state);
+                (*SR->sbr)(&state);
                 SR = CDR(SR);
             } else if (TAG_SBR_REF == SR->tag) {
-                (CAR(SR)->ext->sbr)(&state);
+                (*CAR(SR)->sbr)(&state);
                 SR = CDR(SR);
             }
             CR = CDR(CR);
@@ -581,12 +580,12 @@ eval(void)
     } goto *next[(CR = CDR(CR))->tag];
 
     I_KWD_dlopen: {
-        OBJ * const o = gc_malloc(sizeof(OBJ) * 2);
+        OBJ * const o = gc_malloc(OBJ_SIZE_DLH);
         assert(TAG_VAR == CDR(CR)->tag);
         OBJ const * const s = CADR(CR);
         assert(TAG_SYM < s->tag);
-        if (unlikely(!(o->ext->dlh = dlopen(s->str,RTLD_LAZY)))) {
-            gc_unmalloc(sizeof(OBJ) * 2);
+        if (unlikely(!(*o->dlh = dlopen(s->str,RTLD_LAZY)))) {
+            gc_unmalloc(OBJ_SIZE_DLH);
             fputs(dlerror(),stderr);
             return;
         }
@@ -598,7 +597,7 @@ eval(void)
     } goto *next[(CR = CDDR(CR))->tag];
 
     I_KWD_dlsym: {
-        OBJ * const o = gc_malloc(sizeof(OBJ) * 2);
+        OBJ * const o = gc_malloc(OBJ_SIZE_SBR);
         OBJ const * d = SR;
         SR = CDR(d);
         if (TAG_DLH_REF == d->tag) {
@@ -609,11 +608,11 @@ eval(void)
         OBJ const * const s = CADR(CR);
         assert(TAG_SYM < s->tag);
 
-        o->ext->ptr /* sbr */ = dlsym(d->ext->dlh,s->str);
+        *o->ptr /* sbr */ = dlsym(*d->dlh,s->str);
 
         char const * const err = dlerror();
         if (unlikely(err)) {
-            gc_unmalloc(sizeof(OBJ) * 2);
+            gc_unmalloc(OBJ_SIZE_SBR);
             fputs(err,stderr);
             return;
         }

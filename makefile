@@ -8,6 +8,7 @@ CFLAGS += -Ofast -march=native -flto
 CFLAGS += -fsanitize=undefined,address,leak
 #CFLAGS += -fsanitize=undefined,memory
 #CFLAGS += -DNDEBUG
+#CFLAGS += -D_FORTIFY_SOURCE=2
 
 all : $(TARGET)
 
