@@ -86,8 +86,7 @@ main(void)
    OBJ * const loop = GAR(VAR,sym_nextc);
         GEN(KWD_dup);
         i32(0);
-        GEN(KWD_LT);
-        GAR(IF,IDX_NIL);
+        GAR(IF_LT,IDX_NIL);
         GDR(KWD_DOT,IDX(loop));
 
 
@@ -100,7 +99,7 @@ main(void)
             switch (*u) {
 #define CASE(t) case TAG_ ## t: tag = #t; break
                 CASE(NUM);
-                CASE(IF);
+                CASE(IF_LT);
                 CASE(VAR);
                 CASE(LST);
                 CASE(CALL);
@@ -108,7 +107,6 @@ main(void)
                 CASE(KWD_1MINUS);
                 CASE(KWD_let);
                 CASE(KWD_3let);
-                CASE(KWD_LT);
                 CASE(KWD_DOT);
                 CASE(KWD_dlopen);
                 CASE(KWD_dlsym);

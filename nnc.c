@@ -113,7 +113,7 @@ gc(void)
     while (unlikely(o < hp)) switch (o->tag) {
         case TAG_NIL:
         case TAG_LST:
-        case TAG_IF:
+        case TAG_IF_LT:
         case TAG_NUM_REF:
         case TAG_DEF:
         case TAG_DLH_REF:
@@ -285,7 +285,7 @@ eval(void)
         [ TAG_NUM        ] = &&I_cp,
         [ TAG_VAR        ] = &&I_VAR,
         [ TAG_LEV        ] = &&I_LEV,
-        [ TAG_IF         ] = &&I_IF,
+        [ TAG_IF_LT      ] = &&I_IF_LT,
         [ TAG_CALL       ] = &&I_CALL,
         [ TAG_KWD_let ...
           TAG_KWD_3let   ] = &&I_KWD_let,
@@ -293,10 +293,8 @@ eval(void)
         [ TAG_KWD_def    ] = &&I_KWD_def,
         [ TAG_KWD_PLUS   ] = &&I_KWD_PLUS,
         [ TAG_KWD_DOT    ] = &&I_KWD_DOT,
-        [ TAG_KWD_LT     ] = &&I_KWD_LT,
         [ TAG_KWD_1MINUS ] = &&I_KWD_1MINUS,
         [ TAG_KWD_MUL    ] = &&I_KWD_MUL,
-        [ TAG_KWD_eq     ] = &&I_KWD_eq,
         [ TAG_KWD_dup    ] = &&I_KWD_dup,
         [ TAG_KWD_dlopen ] = &&I_KWD_dlopen,
         [ TAG_KWD_dlsym  ] = &&I_KWD_dlsym,
@@ -359,7 +357,7 @@ eval(void)
             case TAG_NUM:
             case TAG_VAR:
             case TAG_LEV:
-            case TAG_IF:
+            case TAG_IF_LT:
             case TAG_CALL:
             case TAG_KWD$MIN ... TAG_KWD$MAX:
             case TAG_MOV:
@@ -396,7 +394,7 @@ eval(void)
             case TAG_NUM:
             case TAG_VAR:
             case TAG_LEV:
-            case TAG_IF:
+            case TAG_IF_LT:
             case TAG_CALL:
             case TAG_KWD$MIN ... TAG_KWD$MAX:
             case TAG_MOV:
@@ -407,13 +405,16 @@ eval(void)
         }
     }
 
-    I_IF: {
-        OBJ const * const o = SR;
-        SR = CDR(o);
-        if (TAG_LST >= o->tag && IDX_NIL == o->car) {
-            goto *next[(CR = CDR(CR))->tag];
+    I_IF_LT: {
+        OBJ const * const n0 = SR;
+        OBJ const * const n1 = CDR(n0);
+        assert(n0->tag == TAG_NUM);
+        assert(n1->tag == TAG_NUM);
+        SR = CDR(n1);
+        if (n0->i32 > n1->i32) {
+            goto *next[(CR = CAR(CR))->tag];
         }
-    } goto *next[(CR = CAR(CR))->tag];
+    } goto *next[(CR = CDR(CR))->tag];
 
     I_CALL: {
         OBJ * const o = gc_malloc(sizeof(OBJ) * 2);
@@ -521,23 +522,6 @@ eval(void)
         SR = CDR(SR);
     } goto *next[(CR = CDR(CR))->tag];
 
-    I_KWD_LT: {
-        OBJ * const o = gc_malloc(sizeof(OBJ));
-        OBJ const * const n0 = SR;
-        OBJ const * const n1 = CDR(n0);
-        assert(n0->tag == TAG_NUM);
-        assert(n1->tag == TAG_NUM);
-        if (n0->i32 > n1->i32) {
-            o->tag = TAG_NUM;
-            o->i32 = -1;
-        } else {
-            o->tag = TAG_LST;
-            o->car = IDX_NIL;
-        }
-        o->cdr = n1->cdr;
-        SR = o;
-    } goto *next[(CR = CDR(CR))->tag];
-
     I_KWD_1MINUS: {
         OBJ * const o = gc_malloc(sizeof(OBJ));
         assert(SR->tag == TAG_NUM);
@@ -555,24 +539,6 @@ eval(void)
         assert(n1->tag == TAG_NUM);
         o->tag = TAG_NUM;
         o->i32 = n0->i32 * n1->i32;
-        o->cdr = n1->cdr;
-        SR = o;
-    } goto *next[(CR = CDR(CR))->tag];
-
-    I_KWD_eq: {
-        OBJ * const o = gc_malloc(sizeof(OBJ));
-        OBJ const * const n0 = SR;
-        OBJ const * const n1 = CDR(n0);
-        assert(n0->tag == TAG_NUM);
-        assert(n1->tag == TAG_NUM);
-        if (n0->i32 == n1->i32) {
-            o->tag = TAG_NUM;
-            o->i32 = -1;
-        } else {
-            o->tag = TAG_NIL;
-            o->car =
-            o->sym = IDX_NIL;
-        }
         o->cdr = n1->cdr;
         SR = o;
     } goto *next[(CR = CDR(CR))->tag];

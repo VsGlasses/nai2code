@@ -65,8 +65,7 @@ main(void)
 
         GAR(VAR,sym_y);
         GAR(VAR,sym_x);
-        GEN(KWD_LT);
-        GAR(IF,hi + 2);
+        GAR(IF_LT,hi + 2);
         GDA(VAR,IDX_NIL,sym_y);
 
         GAR(VAR,sym_x); GEN(KWD_1MINUS); GAR(VAR,sym_y); GAR(VAR,sym_z); GAR(CALL,tarai);
@@ -92,7 +91,7 @@ main(void)
             switch (*u) {
 #define CASE(t) case TAG_ ## t: tag = #t; break
                 CASE(NUM);
-                CASE(IF);
+                CASE(IF_LT);
                 CASE(VAR);
                 CASE(LST);
                 CASE(CALL);
@@ -100,7 +99,6 @@ main(void)
                 CASE(KWD_1MINUS);
                 CASE(KWD_let);
                 CASE(KWD_3let);
-                CASE(KWD_LT);
                 CASE(KWD_DOT);
                 CASE(KWD_dlopen);
                 CASE(KWD_dlsym);
