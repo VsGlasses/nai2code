@@ -513,7 +513,11 @@ eval(void)
     } goto *next[(CR = CDR(CR))->tag];
 
     I_KWD_DOT: {
-        __builtin_dump_struct(SR,&printf);
+        if (TAG_NUM == SR->tag) {
+            putchar(SR->i32);
+        } else {
+            __builtin_dump_struct(SR,&printf);
+        }
         SR = CDR(SR);
     } goto *next[(CR = CDR(CR))->tag];
 

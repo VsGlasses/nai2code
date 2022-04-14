@@ -46,6 +46,15 @@ gen(
 #define GAR(tag,car    ) gen(TAG_ ## tag,hi + 1,(car)  )
 #define GDA(tag,cdr,car) gen(TAG_ ## tag,(cdr) ,(car)  )
 
+    static OBJ *
+i32(int const num)
+{
+    OBJ * const o = PTR(hi++);
+    o->tag = TAG_NUM;
+    o->cdr = hi;
+    o->i32 = num;
+    return o;
+}
     int
 main(void)
 {
@@ -53,20 +62,34 @@ main(void)
     IDX const sym_Open          = IDX(gen_sym("Open"));
     IDX const sym_GetChar       = IDX(gen_sym("GetChar"));
     IDX const sym_bootstrap_nnc = IDX(gen_sym("bootstrap.nnc"));
+    IDX const sym_nextc         = IDX(gen_sym("nextc"));
 
     printf("#define ORG_BS ((IDX)%d)\n",hi);
 
         GEN(KWD_dlopen);
         GAR(VAR,sym_srm_so);
+
         GEN(KWD_dup);
+
         GEN(KWD_dlsym);
         GAR(VAR,sym_Open);
+
         GEN(KWD_call);
         GAR(VAR,sym_bootstrap_nnc);
+
         GEN(KWD_dlsym);
         GAR(VAR,sym_GetChar);
-        GEN(KWD_call);
-        GDR(KWD_DOT,IDX_NIL);
+
+        GEN(KWD_let);
+        GAR(VAR,sym_nextc);
+
+   OBJ * const loop = GAR(VAR,sym_nextc);
+        GEN(KWD_dup);
+        i32(0);
+        GEN(KWD_LT);
+        GAR(IF,IDX_NIL);
+        GDR(KWD_DOT,IDX(loop));
+
 
     printf("#define ORG_HP (%d)\n",hi);
 
