@@ -37,15 +37,7 @@ _Static_assert(sizeof(heap->obj) == sizeof(heap->u16));
 
 #define COUNTOF(array) (sizeof(array) / sizeof(0[array]))
 
-#define IDX(P) ((IDX)((P) - hp_top))
 #define PTR_NIL PTR(IDX_NIL)
-
-#define CAR(X) _Generic(X,IDX:car_idx,default:car_ptr)(X)
-#define CDR(X) _Generic(X,IDX:cdr_idx,default:cdr_ptr)(X)
-#define CAAR(P) CAR(CAR(P))
-#define CADR(P) CAR(CDR(P))
-#define CDAR(P) CDR(CAR(P))
-#define CDDR(P) CDR(CDR(P))
 
 #if 1
 #   define likely(x)   __builtin_expect(!!(x),1)
@@ -61,15 +53,15 @@ _Static_assert(sizeof(heap->obj) == sizeof(heap->u16));
 static OBJ const *          hp_top =  heap->obj;
 static OBJ       * restrict hp     = &heap->obj[ORG_HP];
 
-static inline OBJ const * PTR(IDX I) __attribute__((assume_aligned(sizeof(OBJ),sizeof(OBJ))));
-static inline OBJ const * PTR(IDX I) { return &hp_top[I]; }
+static inline OBJ const * PTR(IDX i) __attribute__((assume_aligned(sizeof(OBJ),sizeof(OBJ))));
+static inline OBJ const * PTR(IDX i) { return &hp_top[i]; }
+
+#define IDX(p) ((IDX)((p) - hp_top))
 
 static const OBJ *SR,*CR,*DR;
 
-static inline OBJ const * car_idx(IDX const         i) { return PTR(hp_top[i].car); }
-static inline OBJ const * car_ptr(OBJ const * const p) { return PTR(       p->car); }
-static inline OBJ const * cdr_idx(IDX const         i) { return PTR(hp_top[i].cdr); }
-static inline OBJ const * cdr_ptr(OBJ const * const p) { return PTR(       p->cdr); }
+static inline OBJ const * CAR(OBJ const * const p) { return PTR(p->car); }
+static inline OBJ const * CDR(OBJ const * const p) { return PTR(p->cdr); }
 
     static size_t
 obj_len(OBJ const * const o)
@@ -149,7 +141,7 @@ gc(void)
             o->sym = gc_copy(prev_top,o->sym);
             o->car = gc_copy(prev_top,o->car);
             o->cdr = gc_copy(prev_top,o->cdr);
-            o += 2;
+            o += OBJ_SIZE_PTR >> OBJ_SIZE_BITS;
             continue;
 
         case TAG_SYM ... TAG$MAX:
@@ -176,7 +168,7 @@ gc(void)
             __attribute__((fallthrough));
 
         case TAG_SBR:
-            o += 2;
+            o += OBJ_SIZE_PTR >> OBJ_SIZE_BITS;
             continue;
 
         case TAG_SYM ... TAG$MAX:
@@ -259,16 +251,29 @@ find_var(
 
 static const OBJ *SR,*CR,*DR;
 
-static OBJ const * get_SR(void) { return SR; }
-static OBJ const * get_CR(void) { return CR; }
-static OBJ const * get_DR(void) { return DR; }
+static inline OBJ const * Sp(void) { return SR; }
+static inline OBJ const * Cp(void) { return CR; }
+static inline OBJ const * Dp(void) { return DR; }
+static inline IDX         Si(void) { return IDX(SR); }
+static inline IDX         Ci(void) { return IDX(CR); }
+static inline IDX         Di(void) { return IDX(DR); }
+static inline void        pS(OBJ const * p) { SR = p; }
+static inline void        pC(OBJ const * p) { CR = p; }
+static inline void        pD(OBJ const * p) { DR = p; }
+static inline void        iS(IDX         i) { SR = PTR(i); }
+static inline void        iC(IDX         i) { CR = PTR(i); }
+static inline void        iD(IDX         i) { DR = PTR(i); }
+static inline IDX Idx(OBJ const * p) { return IDX(p); }
 
 static STATE const state = {
     gc_malloc,
-    get_SR,
-    get_CR,
-    get_DR,
+    Sp,Cp,Dp,
+    Si,Ci,Di,
+    pS,pC,pD,
+    iS,iC,iD,
     PTR,
+    Idx,
+    CAR,CDR,
 };
 
     static void
@@ -336,7 +341,7 @@ eval(void)
             case TAG_LST:
             case TAG_DLH_REF:
                 o->tag = i->tag;
-                o->cdr = IDX(SR);
+                o->cdr = Si();
                 o->i32 = i->i32;
                 SR = o;
                 gc_unmalloc(sizeof(OBJ));
@@ -349,7 +354,7 @@ eval(void)
 
             case TAG_SBR_REF:
                 (*CAR(i)->sbr)(&state);
-                goto *next[(CR = CDR(CR))->tag];
+                goto *next[CR->tag];
 
             case TAG_NUM:
             case TAG_VAR:
@@ -383,7 +388,7 @@ eval(void)
             case TAG_DLH_REF:
             case TAG_SBR_REF: {
                 o->tag = i->tag;
-                o->cdr = IDX(SR);
+                o->cdr = Si();
                 o->i32 = i->i32;
                 SR = o;
             } goto *next[(CR = CDR(CR))->tag];
@@ -435,13 +440,13 @@ eval(void)
             assert(SR);
             if (TAG_NUM == SR->tag) {
                 o->tag = TAG_NUM_REF;
-                o->car = IDX(SR);
+                o->car = Si();
             } else if (TAG_DLH == SR->tag) {
                 o->tag = TAG_DLH_REF;
-                o->car = IDX(SR);
+                o->car = Si();
             } else if (TAG_SBR == SR->tag) {
                 o->tag = TAG_SBR_REF;
-                o->car = IDX(SR);
+                o->car = Si();
             } else {
                 o->tag = SR->tag;
                 o->car = SR->car;
@@ -453,25 +458,32 @@ eval(void)
         } while (--n);
     } goto *next[(CR = CDR(CR))->tag];
 
-    I_KWD_call: {
-        assert(TAG_DEF     == SR->tag ||
-               TAG_SBR     == SR->tag ||
-               TAG_SBR_REF == SR->tag);
-        if (TAG_DEF == SR->tag) {
+    I_KWD_call: switch (SR->tag) {
+        case TAG_DEF: {
             OBJ * const o = gc_malloc(sizeof(OBJ) * 2);
-            CR = def_call(o,SR);
+            OBJ const * const def = SR;
             SR = CDR(SR);
-        } else {
-            if (TAG_SBR == SR->tag) {
-                (*SR->sbr)(&state);
-                SR = CDR(SR);
-            } else if (TAG_SBR_REF == SR->tag) {
-                (*CAR(SR)->sbr)(&state);
-                SR = CDR(SR);
-            }
-            CR = CDR(CR);
-        }
-    } goto *next[CR->tag];
+            CR = def_call(o,def);
+        } goto *next[CR->tag];
+
+        case TAG_SBR_REF: {
+            SBR * const sbr = *CAR(SR)->sbr;
+            SR = CDR(SR);
+            sbr(&state);
+        } goto *next[CR->tag];
+
+        case TAG_SBR: {
+            SBR * const sbr = *SR->sbr;
+            SR = CDR(SR);
+            sbr(&state);
+        } goto *next[CR->tag];
+
+        case TAG_NIL ... TAG_NUM_REF:
+        case TAG_DLH_REF:
+        case TAG_MOV ... TAG_DLH:
+        case TAG_SYM ... TAG$MAX:
+            __builtin_unreachable();
+    }
 
     I_KWD_def: {
         assert(SR->tag == TAG_LST);
@@ -568,14 +580,14 @@ eval(void)
             o->i32 = SR->i32;
         } else if (TAG_DLH == SR->tag) {
             o->tag = TAG_DLH_REF;
-            o->car = IDX(SR);
+            o->car = Si();
             o->sym = IDX_NIL;
         } else if (TAG_SBR == SR->tag) {
             o->tag = TAG_SBR_REF;
-            o->car = IDX(SR);
+            o->car = Si();
             o->sym = IDX_NIL;
         }
-        o->cdr = IDX(SR);
+        o->cdr = Si();
         SR = o;
     } goto *next[(CR = CDR(CR))->tag];
 
@@ -590,7 +602,7 @@ eval(void)
             return;
         }
         o->tag = TAG_DLH;
-        o->cdr = IDX(SR);
+        o->cdr = Si();
         o->sym = IDX(s);
         o->car = IDX_NIL;
         SR = o;
@@ -617,7 +629,7 @@ eval(void)
             return;
         }
         o->tag = TAG_SBR;
-        o->cdr = IDX(SR);
+        o->cdr = Si();
         o->sym = IDX(s);
         o->car = IDX(d);
         SR = o;

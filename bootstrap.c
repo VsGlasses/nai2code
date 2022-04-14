@@ -51,16 +51,22 @@ main(void)
 {
     IDX const sym_srm_so        = IDX(gen_sym("srm.so"));
     IDX const sym_Open          = IDX(gen_sym("Open"));
+    IDX const sym_GetChar       = IDX(gen_sym("GetChar"));
     IDX const sym_bootstrap_nnc = IDX(gen_sym("bootstrap.nnc"));
 
     printf("#define ORG_BS ((IDX)%d)\n",hi);
 
         GEN(KWD_dlopen);
         GAR(VAR,sym_srm_so);
+        GEN(KWD_dup);
         GEN(KWD_dlsym);
         GAR(VAR,sym_Open);
         GEN(KWD_call);
-        GDA(VAR,IDX_NIL,sym_bootstrap_nnc);
+        GAR(VAR,sym_bootstrap_nnc);
+        GEN(KWD_dlsym);
+        GAR(VAR,sym_GetChar);
+        GEN(KWD_call);
+        GDR(KWD_DOT,IDX_NIL);
 
     printf("#define ORG_HP (%d)\n",hi);
 
@@ -84,6 +90,7 @@ main(void)
                 CASE(KWD_dlopen);
                 CASE(KWD_dlsym);
                 CASE(KWD_call);
+                CASE(KWD_dup);
 
                 case TAG_SYM ... TAG$MAX: {
                     TAG const t = *u++;

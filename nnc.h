@@ -96,13 +96,27 @@ _Static_assert(sizeof(NNC_(OBJ)) * 2  == NNC_(OBJ_SIZE_PTR));
 _Static_assert(sizeof(NNC_(OBJ)) * 2  == NNC_(OBJ_SIZE_DLH));
 _Static_assert(sizeof(NNC_(OBJ)) * 2  == NNC_(OBJ_SIZE_SBR));
 
+typedef NNC_(OBJ) const * (*NNC_(GET_REG_PTR_FN))(void);
+typedef NNC_(IDX)         (*NNC_(GET_REG_IDX_FN))(void);
+typedef void              (*NNC_(SET_REG_PTR_FN))(NNC_(OBJ) const *);
+typedef void              (*NNC_(SET_REG_IDX_FN))(NNC_(IDX));
+typedef NNC_(OBJ) const * (*NNC_(CAR_CDR_PTR_FN))(NNC_(OBJ) const *);
+
 struct NNC_(STATE) {
-    NNC_(OBJ)       * (*gc_malloc)(size_t);
-    NNC_(OBJ) const * (*SR)(void);
-    NNC_(OBJ) const * (*CR)(void);
-    NNC_(OBJ) const * (*DR)(void);
-    NNC_(OBJ) const * (*PTR)(NNC_(IDX));
+    NNC_(OBJ) * (*gc_malloc)(size_t);
+    NNC_(GET_REG_PTR_FN) Sp,Cp,Dp;
+    NNC_(GET_REG_IDX_FN) Si,Ci,Di;
+    NNC_(SET_REG_PTR_FN) pS,pC,pD;
+    NNC_(SET_REG_IDX_FN) iS,iC,iD;
+    NNC_(OBJ) const * (*ptr)(NNC_(IDX));
+    NNC_(IDX)         (*idx)(NNC_(OBJ) const *);
+    NNC_(CAR_CDR_PTR_FN) car,cdr;
 };
+
+#define CAAR(P) CAR(CAR(P))
+#define CADR(P) CAR(CDR(P))
+#define CDAR(P) CDR(CAR(P))
+#define CDDR(P) CDR(CDR(P))
 
     static inline NNC_(IDX)
 NNC_(nOBJs)(size_t const nbytes)
