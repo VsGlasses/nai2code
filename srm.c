@@ -105,8 +105,7 @@ GetChar(
 
     if (get_idx < len) return;
 
-    int const result = munmap(addr,len);
-    assert(!result);
+    if (munmap(addr,len)) assert(0);
 
     addr = MAP_FAILED;
 }
@@ -124,8 +123,7 @@ destructor(void)
     printf("destructor called\n");
     if (MAP_FAILED == addr) return;
 
-    int const result = munmap(addr,len);
-    assert(!result);
+    if (munmap(addr,len)) assert(0);
 
     addr = MAP_FAILED;
 }
