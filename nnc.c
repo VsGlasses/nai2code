@@ -66,13 +66,20 @@ static inline OBJ const * CDR(OBJ const * const p) { return PTR(p->cdr); }
     static size_t
 obj_len(OBJ const * const o)
 {
-    TAG const t = o->tag;
-    if (TAG_MOV > t) {
-        return sizeof(OBJ);
-    } else if (TAG_SYM > t) {
-        return OBJ_SIZE_PTR;
+    switch (o->tag) {
+        case TAG_NIL ... TAG_SBR_REF:
+            return sizeof(OBJ);
+
+        case TAG_MOV:
+            return (size_t)o->car << OBJ_SIZE_BITS;
+
+        case TAG_DLH:
+        case TAG_SBR:
+            return OBJ_SIZE_PTR;
+
+        case TAG_SYM ... TAG$MAX:
+            return sym_len(o->tag);
     }
-    return sym_len(t);
 }
 
     static IDX
@@ -280,25 +287,26 @@ static STATE const state = {
 eval(void)
 {
     static void const * const next[] = {
-        [ TAG_NIL        ] = &&I_NIL,
-        [ TAG_LST        ] = &&I_cp,
-        [ TAG_NUM        ] = &&I_cp,
-        [ TAG_VAR        ] = &&I_VAR,
-        [ TAG_LEV        ] = &&I_LEV,
-        [ TAG_IF_LT      ] = &&I_IF_LT,
-        [ TAG_CALL       ] = &&I_CALL,
+        [ TAG_NIL         ] = &&I_NIL,
+        [ TAG_LST         ] = &&I_cp,
+        [ TAG_NUM         ] = &&I_cp,
+        [ TAG_VAR         ] = &&I_VAR,
+        [ TAG_LEV         ] = &&I_LEV,
+        [ TAG_IF_LT       ] = &&I_IF_LT,
+        [ TAG_CALL        ] = &&I_CALL,
         [ TAG_KWD_let ...
-          TAG_KWD_3let   ] = &&I_KWD_let,
-        [ TAG_KWD_call   ] = &&I_KWD_call,
-        [ TAG_KWD_def    ] = &&I_KWD_def,
-        [ TAG_KWD_PLUS   ] = &&I_KWD_PLUS,
-        [ TAG_KWD_DOT    ] = &&I_KWD_DOT,
-        [ TAG_KWD_1MINUS ] = &&I_KWD_1MINUS,
-        [ TAG_KWD_MUL    ] = &&I_KWD_MUL,
-        [ TAG_KWD_dup    ] = &&I_KWD_dup,
-        [ TAG_KWD_dlopen ] = &&I_KWD_dlopen,
-        [ TAG_KWD_dlsym  ] = &&I_KWD_dlsym,
-        [ TAG_KWD_gc     ] = &&I_KWD_gc,
+          TAG_KWD_3let    ] = &&I_KWD_let,
+        [ TAG_KWD_call    ] = &&I_KWD_call,
+        [ TAG_KWD_def     ] = &&I_KWD_def,
+        [ TAG_KWD_PLUS    ] = &&I_KWD_PLUS,
+        [ TAG_KWD_DOT     ] = &&I_KWD_DOT,
+        [ TAG_KWD_1MINUS  ] = &&I_KWD_1MINUS,
+        [ TAG_KWD_MUL     ] = &&I_KWD_MUL,
+        [ TAG_KWD_dup     ] = &&I_KWD_dup,
+        [ TAG_KWD_dlopen  ] = &&I_KWD_dlopen,
+        [ TAG_KWD_dlsym   ] = &&I_KWD_dlsym,
+        [ TAG_KWD_gc_dump ] = &&I_KWD_gc_dump,
+        [ TAG_KWD_gc      ] = &&I_KWD_gc,
     };
 
     _Static_assert(COUNTOF(next) == TAG_KWD$MAX + 1);
@@ -605,9 +613,28 @@ eval(void)
         SR = o;
     } goto *next[(CR = CDDR(CR))->tag];
 
-    I_KWD_gc: {
+    I_KWD_gc_dump: {
+        CR = CDR(CR);
         gc();
-    } goto *next[(CR = CDR(CR))->tag];
+        printf("#define ORG_HP (%d)\n",IDX(hp));
+        OBJ const * p = hp_top;
+        int count = 0;
+        while (p < hp) {
+            OBJ const * const q = p + nOBJs(obj_len(p));
+            if (TAG_DLH == p->tag || TAG_SBR == p->tag) {
+                fprintf(stderr,"TAG_DLH or TAG_SBR found:count = %d\n",count);
+            }
+            do {
+                printf("0x%016lX,",*(uint64_t const *)p);
+                if (!(++count & 7)) puts("");
+            } while (++p < q);
+        }
+    } goto *next[CR->tag];
+
+    I_KWD_gc: {
+        CR = CDR(CR);
+        gc();
+    } goto *next[CR->tag];
 }
 
     int

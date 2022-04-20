@@ -86,9 +86,12 @@ main(void)
    OBJ * const loop = GAR(VAR,sym_nextc);
         GEN(KWD_dup);
         i32(0);
-        GAR(IF_LT,IDX_NIL);
+   OBJ * const l00 = GEN(IF_LT);
         GDR(KWD_DOT,IDX(loop));
 
+        l00->car = hi;
+
+        GDR(KWD_gc_dump,IDX_NIL);
 
     printf("#define ORG_HP (%d)\n",hi);
 
@@ -112,6 +115,8 @@ main(void)
                 CASE(KWD_dlsym);
                 CASE(KWD_call);
                 CASE(KWD_dup);
+                CASE(KWD_gc_dump);
+                CASE(KWD_gc);
 
                 case TAG_SYM ... TAG$MAX: {
                     TAG const t = *u++;
