@@ -287,26 +287,28 @@ static STATE const state = {
 eval(void)
 {
     static void const * const next[] = {
-        [ TAG_NIL         ] = &&I_NIL,
-        [ TAG_LST         ] = &&I_cp,
-        [ TAG_NUM         ] = &&I_cp,
-        [ TAG_VAR         ] = &&I_VAR,
-        [ TAG_LEV         ] = &&I_LEV,
-        [ TAG_IF_LT       ] = &&I_IF_LT,
-        [ TAG_CALL        ] = &&I_CALL,
+        [ TAG_NIL          ] = &&I_NIL,
+        [ TAG_LST          ] = &&I_cp,
+        [ TAG_NUM          ] = &&I_cp,
+        [ TAG_VAR          ] = &&I_VAR,
+        [ TAG_LEV          ] = &&I_LEV,
+        [ TAG_IF_LT        ] = &&I_IF_LT,
+        [ TAG_CALL         ] = &&I_CALL,
         [ TAG_KWD_let ...
-          TAG_KWD_3let    ] = &&I_KWD_let,
-        [ TAG_KWD_call    ] = &&I_KWD_call,
-        [ TAG_KWD_def     ] = &&I_KWD_def,
-        [ TAG_KWD_PLUS    ] = &&I_KWD_PLUS,
-        [ TAG_KWD_DOT     ] = &&I_KWD_DOT,
-        [ TAG_KWD_1MINUS  ] = &&I_KWD_1MINUS,
-        [ TAG_KWD_MUL     ] = &&I_KWD_MUL,
-        [ TAG_KWD_dup     ] = &&I_KWD_dup,
-        [ TAG_KWD_dlopen  ] = &&I_KWD_dlopen,
-        [ TAG_KWD_dlsym   ] = &&I_KWD_dlsym,
-        [ TAG_KWD_gc_dump ] = &&I_KWD_gc_dump,
-        [ TAG_KWD_gc      ] = &&I_KWD_gc,
+          TAG_KWD_3let     ] = &&I_KWD_let,
+        [ TAG_KWD_call     ] = &&I_KWD_call,
+        [ TAG_KWD_def      ] = &&I_KWD_def,
+        [ TAG_KWD_PLUS     ] = &&I_KWD_PLUS,
+        [ TAG_KWD_DOT      ] = &&I_KWD_DOT,
+        [ TAG_KWD_1MINUS   ] = &&I_KWD_1MINUS,
+        [ TAG_KWD_MUL      ] = &&I_KWD_MUL,
+        [ TAG_KWD_dup      ] = &&I_KWD_dup,
+        [ TAG_KWD_dlopen   ] = &&I_KWD_dlopen,
+        [ TAG_KWD_dlsym    ] = &&I_KWD_dlsym,
+        [ TAG_KWD_Define   ] = &&I_KWD_Define,
+        [ TAG_KWD_Question ] = &&I_KWD_Question,
+        [ TAG_KWD_gc_dump  ] = &&I_KWD_gc_dump,
+        [ TAG_KWD_gc       ] = &&I_KWD_gc,
     };
 
     _Static_assert(COUNTOF(next) == TAG_KWD$MAX + 1);
@@ -611,6 +613,23 @@ eval(void)
         o->sym = IDX(s);
         o->car = IDX(d);
         SR = o;
+    } goto *next[(CR = CDDR(CR))->tag];
+
+    I_KWD_Define: {
+        OBJ * o = gc_malloc(sizeof(OBJ) * 2);
+        assert(TAG_LST == SR->tag);
+        assert(TAG_LST == CDR(CR)->tag);
+        o->tag = TAG_LST;
+        o->sym = CAR(SR)->car;
+        assert(TAG_SYM <= PTR(o->sym)->tag);
+        o->car = IDX(o + 1);
+        o->cdr = IDX(DR);
+        DR = o++;
+        o->tag = TAG_LST;
+        o->sym = IDX_NIL;
+        o->car = CAR(SR)->cdr;
+        o->cdr = CDR(CR)->car;
+        SR = CDR(SR);
     } goto *next[(CR = CDDR(CR))->tag];
 
     I_KWD_gc_dump: {

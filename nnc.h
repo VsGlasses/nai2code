@@ -33,6 +33,7 @@ typedef enum __attribute__((packed)) {
     NNC_(TAG_KWD_dup),
     NNC_(TAG_KWD_dlopen),
     NNC_(TAG_KWD_dlsym),
+    NNC_(TAG_KWD_Define),   // :-
     NNC_(TAG_KWD_gc_dump),
     NNC_(TAG_KWD_gc),
     NNC_(TAG_KWD$MAX) = NNC_(TAG_KWD_gc),
