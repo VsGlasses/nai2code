@@ -79,14 +79,13 @@ static inline void        iD(IDX         i) { DR = PTR(i); }
 obj_len(OBJ const * const o)
 {
     switch (o->tag) {
-        case TAG_NIL ... TAG_SBR_REF:
+        case TAG_NIL ... TAG_MOV-1:
             return sizeof(OBJ);
 
         case TAG_MOV:
             return (size_t)o->car << OBJ_SIZE_BITS;
 
-        case TAG_DLH:
-        case TAG_SBR:
+        case TAG_MOV+1 ... TAG_SYM-1:
             return OBJ_SIZE_PTR;
 
         case TAG_SYM ... TAG$MAX:
@@ -133,10 +132,7 @@ gc(void)
         case TAG_NIL:
         case TAG_LST:
         case TAG_IF_LT:
-        case TAG_NUM_REF:
-        case TAG_DEF:
-        case TAG_DLH_REF:
-        case TAG_SBR_REF:
+        case TAG_KWD$MAX+1 ... TAG_MOV-1:
             o->sym = gc_copy(prev_top,o->sym);
             __attribute__((fallthrough));
 
@@ -172,7 +168,7 @@ gc(void)
     o = prev_top;
     while (unlikely(o < prev_hp)) switch (o->tag) {
 
-        case TAG_NIL ... TAG_SBR_REF:
+        case TAG_NIL ... TAG_MOV-1:
             ++o;
             continue;
 
@@ -226,19 +222,17 @@ gc_unmalloc(size_t const s)
     hp -= nOBJs(s);
 }
 
-    static OBJ const *
-def_call(
-    OBJ       * const o,
-    OBJ const *       def)
+    static void
+call(
+    OBJ * const o,
+    IDX   const di)
 {
-    assert(def->tag == TAG_DEF);
-
     OBJ * const p = o + 1;
 
     o->tag = TAG_LST;
     o->sym = IDX_SYM_ATret;
     o->car = IDX(p);
-    o->cdr = CAR(def)->cdr;
+    o->cdr = di;
 
     p->tag = TAG_LST;
     p->sym = IDX_NIL;
@@ -246,7 +240,15 @@ def_call(
     p->cdr = Di();
 
     DR = o;
+}
 
+    static OBJ const *
+def_call(
+    OBJ       * const o,
+    OBJ const * const def)
+{
+    assert(def->tag == TAG_DEF);
+    call(o,CAR(def)->cdr);
     return CAAR(def);
 }
 
@@ -266,6 +268,25 @@ find_var(
         }
         i = CDR(i);
     }
+}
+
+    static TAG
+callee(TAG const tag)
+{
+    assert(SR->tag == TAG_LST);
+    OBJ * const o = gc_malloc(sizeof(OBJ) * 2);
+    OBJ * const p = o + 1;
+    o->tag = tag;
+    o->sym = IDX_NIL;
+    o->cdr = SR->cdr;
+    o->car = IDX(p);
+    p->tag = TAG_LST;
+    p->sym = IDX_NIL;
+    p->cdr = Di();
+    p->car = SR->car;
+    SR = o;
+
+    return (CR = CDR(CR))->tag;
 }
 
 static inline IDX Idx(OBJ const * p) { return IDX(p); }
@@ -303,8 +324,8 @@ eval(void)
         [ TAG_KWD_dup     ] = &&I_KWD_dup,
         [ TAG_KWD_dlopen  ] = &&I_KWD_dlopen,
         [ TAG_KWD_dlsym   ] = &&I_KWD_dlsym,
-        [ TAG_KWD_unf     ] = &&I_KWD_unf,
-        [ TAG_KWD_rec     ] = &&I_KWD_rec,
+        [ TAG_KWD_QUES    ] = &&I_KWD_QUES,
+        [ TAG_KWD_RULE    ] = &&I_KWD_RULE,
         [ TAG_KWD_gc_dump ] = &&I_KWD_gc_dump,
         [ TAG_KWD_gc      ] = &&I_KWD_gc,
     };
@@ -336,7 +357,6 @@ eval(void)
         OBJ const * i = find_var(DR,s);
 
         switch (i->tag) {
-
             case TAG_NUM_REF:
                 o->tag = i->tag;
                 i = CAR(i);
@@ -358,20 +378,19 @@ eval(void)
                 CR = def_call(o,i);
                 goto *next[CR->tag];
 
+            case TAG_PRED:
+
+                assert(TAG_LST == CDR(CR)->tag);
+                //x = CDR(CR); 
+                //y = CAAR(i);
+                goto *next[(CR = CDR(CR))->tag];
+
             case TAG_SBR_REF:
                 (*CAR(i)->sbr)(&state);
                 goto *next[CR->tag];
 
-            case TAG_NUM:
-            case TAG_VAR:
-            case TAG_LEV:
-            case TAG_IF_LT:
-            case TAG_CALL:
-            case TAG_KWD$MIN ... TAG_KWD$MAX:
-            case TAG_MOV:
-            case TAG_DLH:
-            case TAG_SBR:
-            case TAG_SYM ... TAG$MAX:
+            case TAG_NUM ... TAG_KWD$MAX:
+            case TAG_MOV ... TAG$MAX:
                 __builtin_unreachable();
         }
     }
@@ -388,27 +407,17 @@ eval(void)
                 assert(i->tag == TAG_NUM);
                 __attribute__((fallthrough));
 
-            case TAG_NIL:
-            case TAG_LST:
-            case TAG_DEF:
-            case TAG_DLH_REF:
-            case TAG_SBR_REF: {
+            case TAG_NIL     ... TAG_LST:
+            case TAG_DEF     ... TAG_PRED:
+            case TAG_DLH_REF ... TAG_SBR_REF: {
                 o->tag = i->tag;
                 o->cdr = Si();
                 o->i32 = i->i32;
                 SR = o;
             } goto *next[(CR = CDR(CR))->tag];
 
-            case TAG_NUM:
-            case TAG_VAR:
-            case TAG_LEV:
-            case TAG_IF_LT:
-            case TAG_CALL:
-            case TAG_KWD$MIN ... TAG_KWD$MAX:
-            case TAG_MOV:
-            case TAG_DLH:
-            case TAG_SBR:
-            case TAG_SYM ... TAG$MAX:
+            case TAG_NUM ... TAG_KWD$MAX:
+            case TAG_MOV ... TAG$MAX:
                 __builtin_unreachable();
         }
     }
@@ -426,19 +435,7 @@ eval(void)
 
     I_CALL: {
         OBJ * const o = gc_malloc(sizeof(OBJ) * 2);
-        OBJ * const p = o + 1;
-
-        o->tag = TAG_LST;
-        o->sym = IDX_SYM_ATret;
-        o->car = IDX(p);
-        o->cdr = Di();
-
-        p->tag = TAG_LST;
-        p->sym = IDX_NIL;
-        p->car = Ci();
-        p->cdr = Di();
-
-        DR = o;
+        call(o,Di());
     } goto *next[(CR = CAR(CR))->tag];
 
     I_KWD_let: {
@@ -470,10 +467,11 @@ eval(void)
     I_KWD_call: switch (SR->tag) {
         case TAG_DEF: {
             OBJ * const o = gc_malloc(sizeof(OBJ) * 2);
-            OBJ const * const def = SR;
+            CR = def_call(o,SR);
             SR = CDR(SR);
-            CR = def_call(o,def);
         } goto *next[CR->tag];
+
+        case TAG_PRED:
 
         case TAG_SBR_REF: {
             SBR * const sbr = *CAR(SR)->sbr;
@@ -487,27 +485,15 @@ eval(void)
             sbr(&state);
         } goto *next[CR->tag];
 
-        case TAG_NIL ... TAG_NUM_REF:
-        case TAG_DLH_REF:
-        case TAG_MOV ... TAG_DLH:
-        case TAG_SYM ... TAG$MAX:
+        case TAG_NIL     ... TAG_KWD$MAX:
+        case TAG_NUM_REF ... TAG_DLH_REF:
+        case TAG_MOV     ... TAG_DLH:
+        case TAG_SYM     ... TAG$MAX:
             __builtin_unreachable();
     }
 
-    I_KWD_def: {
-        assert(SR->tag == TAG_LST);
-        OBJ * const o = gc_malloc(sizeof(OBJ) * 2);
-        OBJ * const p = o + 1;
-        o->tag = TAG_DEF;
-        o->sym = IDX_NIL;
-        o->cdr = SR->cdr;
-        o->car = IDX(p);
-        p->tag = TAG_LST;
-        p->sym = IDX_NIL;
-        p->cdr = Di();
-        p->car = SR->car;
-        SR = o;
-    } goto *next[(CR = CDR(CR))->tag];
+    I_KWD_def:
+        goto *next[callee(TAG_DEF)];
 
     I_KWD_PLUS: {
         OBJ * const o = gc_malloc(sizeof(OBJ));
@@ -613,11 +599,10 @@ eval(void)
         SR = o;
     } goto *next[(CR = CDDR(CR))->tag];
 
-    I_KWD_unf: {
-    } goto *next[(CR = CDDR(CR))->tag];
+    I_KWD_QUES:
+    I_KWD_RULE:
+        goto *next[(CR = CDR(CR))->tag];
 
-    I_KWD_rec: {
-               }
     I_KWD_gc_dump: {
         CR = CDR(CR);
         gc();
