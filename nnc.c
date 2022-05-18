@@ -12,9 +12,9 @@
 #pragma GCC diagnostic ignored "-Wgnu-designator"
 
 #if defined(NDEBUG)
-#undef assert
-#define assert(t) __builtin_assume(t)
-#pragma GCC diagnostic ignored "-Wassume"
+#   undef assert
+#   define assert(t) __builtin_assume(t)
+#   pragma GCC diagnostic ignored "-Wassume"
 #endif
 
 static union {
@@ -223,30 +223,18 @@ gc_unmalloc(size_t const s)
 }
 
 /*
-    (DR) -> TAG_LST -> (di)
+    (DR) -> TAG_LST -> (prev DR)
             | :@ret
-            v
-            TAG_LST -> (prev DR)
-            |
             v
            (saved CR)
 */
     static void
-call(
-    OBJ * const o,
-    IDX   const di)
+call(OBJ * const o)
 {
-    OBJ * const p = o + 1;
-
     o->tag = TAG_LST;
     o->sym = IDX_SYM_ATret;
-    o->car = IDX(p);
-    o->cdr = di;
-
-    p->tag = TAG_LST;
-    p->sym = IDX_NIL;
-    p->car = Ci();
-    p->cdr = Di();
+    o->car = Ci();
+    o->cdr = Di();
 
     DR = o;
 }
@@ -318,8 +306,7 @@ eval(void)
         OBJ const * o = DR;
         while (likely(IDX_SYM_ATret != o->sym)) o = CDR(o);
         if (unlikely(PTR_NIL == o)) return;
-        DR = CDAR(o);
-        CR = CAAR(o);
+        CR = CAR(o);
     } goto *next[(CR = CDR(CR))->tag];
 
     I_cp: {
@@ -331,7 +318,7 @@ eval(void)
     } goto *next[(CR = CDR(CR))->tag];
 
     I_VAR: {
-        OBJ * const o = gc_malloc(sizeof(OBJ) * 2);
+        OBJ * const o = gc_malloc(sizeof(OBJ));
         IDX const s = CR->car;
         assert(PTR(s)->tag >= TAG_SYM);
         OBJ const * i = find_var(DR,s);
@@ -350,12 +337,10 @@ eval(void)
                 o->cdr = Si();
                 o->i32 = i->i32;
                 SR = o;
-                gc_unmalloc(sizeof(OBJ));
-                assert(hp == o+1);
                 goto *next[(CR = CDR(CR))->tag];
 
             case TAG_DEF:
-                call(o,IDX(i));
+                call(o);
                 goto *next[(CR = CAR(i))->tag];
 
             /*
@@ -431,8 +416,7 @@ eval(void)
     } goto *next[(CR = CDR(CR))->tag];
 
     I_CALL: {
-        OBJ * const o = gc_malloc(sizeof(OBJ) * 2);
-        call(o,Di());
+        call(gc_malloc(sizeof(OBJ)));
     } goto *next[(CR = CAR(CR))->tag];
 
     I_KWD_let: {
@@ -463,8 +447,7 @@ eval(void)
 
     I_KWD_call: switch (SR->tag) {
         case TAG_DEF: {
-            OBJ * const o = gc_malloc(sizeof(OBJ) * 2);
-            call(o,Di());
+            call(gc_malloc(sizeof(OBJ)));
             CR = CAR(SR);
             SR = CDR(SR);
         } goto *next[CR->tag];
