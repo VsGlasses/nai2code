@@ -222,6 +222,15 @@ gc_unmalloc(size_t const s)
     hp -= nOBJs(s);
 }
 
+/*
+    (DR) -> TAG_LST -> (di)
+            | :@ret
+            v
+            TAG_LST -> (prev DR)
+            |
+            v
+           (saved CR)
+*/
     static void
 call(
     OBJ * const o,
@@ -243,16 +252,6 @@ call(
 }
 
     static OBJ const *
-def_call(
-    OBJ       * const o,
-    OBJ const * const def)
-{
-    assert(def->tag == TAG_DEF);
-    call(o,CAR(def)->cdr);
-    return CAAR(def);
-}
-
-    static OBJ const *
 find_var(
     OBJ const * i,
     IDX const   s)
@@ -268,25 +267,6 @@ find_var(
         }
         i = CDR(i);
     }
-}
-
-    static TAG
-callee(TAG const tag)
-{
-    assert(SR->tag == TAG_LST);
-    OBJ * const o = gc_malloc(sizeof(OBJ) * 2);
-    OBJ * const p = o + 1;
-    o->tag = tag;
-    o->sym = IDX_NIL;
-    o->cdr = SR->cdr;
-    o->car = IDX(p);
-    p->tag = TAG_LST;
-    p->sym = IDX_NIL;
-    p->cdr = Di();
-    p->car = SR->car;
-    SR = o;
-
-    return (CR = CDR(CR))->tag;
 }
 
 static inline IDX Idx(OBJ const * p) { return IDX(p); }
@@ -375,13 +355,30 @@ eval(void)
                 goto *next[(CR = CDR(CR))->tag];
 
             case TAG_DEF:
-                CR = def_call(o,i);
-                goto *next[CR->tag];
+                call(o,IDX(i));
+                goto *next[(CR = CAR(i))->tag];
 
+            /*
+                > hoo X Y
+
+                (CR) -> :hoo -> :X -> :Y -> ...
+
+                > :- ((hoo X Y) bar Z)
+
+                (DR)  (i)
+                 |     |
+                 v     v
+                ... -> TAG_PRED -> ...
+                       |   :hoo
+                       v
+                       TAG_LST -> :bar -> :Z -> NIL
+                       |
+                       v
+                       :X -> :Y -> NIL
+            */
             case TAG_PRED:
-
                 assert(TAG_LST == CDR(CR)->tag);
-                //x = CDR(CR); 
+                //x = CDR(CR);
                 //y = CAAR(i);
                 goto *next[(CR = CDR(CR))->tag];
 
@@ -467,7 +464,8 @@ eval(void)
     I_KWD_call: switch (SR->tag) {
         case TAG_DEF: {
             OBJ * const o = gc_malloc(sizeof(OBJ) * 2);
-            CR = def_call(o,SR);
+            call(o,Di());
+            CR = CAR(SR);
             SR = CDR(SR);
         } goto *next[CR->tag];
 
@@ -492,8 +490,21 @@ eval(void)
             __builtin_unreachable();
     }
 
-    I_KWD_def:
-        goto *next[callee(TAG_DEF)];
+    /*
+        (SR) -> TAG_DEF -> ...
+                |
+                v
+               ...
+    */
+    I_KWD_def: {
+        assert(SR->tag == TAG_LST);
+        OBJ * const o = gc_malloc(sizeof(OBJ));
+        o->tag = TAG_DEF;
+        o->sym = IDX_NIL;
+        o->car = SR->car;
+        o->cdr = SR->cdr;
+        SR = o;
+    } goto *next[(CR = CDR(CR))->tag];
 
     I_KWD_PLUS: {
         OBJ * const o = gc_malloc(sizeof(OBJ));
