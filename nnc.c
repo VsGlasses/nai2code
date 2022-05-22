@@ -17,27 +17,27 @@
 #   pragma GCC diagnostic ignored "-Wassume"
 #endif
 
+#define NIL_SYM \
+    TAG_NIL,/* cdr */IDX_NIL,/* sym */IDX_SYM_ATret,/* car */IDX_NIL, \
+    TAG_SYM + sizeof("@ret") - sizeof(""),'@' | ('r' << 8),'e' | ('t' << 8),'\0', \
+    TAG_SYM,'\0','\0','\0',/* IDX_SYM_TRAIL */
+
 static union {
     OBJ            obj[ IDX$MAX + 1];
     uint16_t const u16[(IDX$MAX + 1) * (sizeof(OBJ) / sizeof(uint16_t))];
 } heap[2] = {
-    { .u16 = {
-        TAG_NIL,/* cdr */IDX_NIL,/* sym */IDX_SYM_ATret,/* car */IDX_NIL,
-        TAG_SYM + sizeof("@ret") - sizeof(""),'@' | ('r' << 8),'e' | ('t' << 8),'\0',
+    { .u16 = { NIL_SYM
 
 #include "bootstrap.h"
 
-    } },{ .u16 = {
-        TAG_NIL,/* cdr */IDX_NIL,/* sym */IDX_SYM_ATret,/* car */IDX_NIL,
-        TAG_SYM + sizeof("@ret") - sizeof(""),'@' | ('r' << 8),'e' | ('t' << 8),'\0',
-    } }
+    } },{ .u16 = { NIL_SYM } }
 };
+
+#undef NIL_SYM
 
 _Static_assert(sizeof(heap->obj) == sizeof(heap->u16));
 
 #define COUNTOF(array) (sizeof(array) / sizeof(0[array]))
-
-#define PTR_NIL PTR(IDX_NIL)
 
 #if 1
 #   define likely(x)   __builtin_expect(!!(x),1)
@@ -50,30 +50,30 @@ _Static_assert(sizeof(heap->obj) == sizeof(heap->u16));
 #   define unlikely(x) __builtin_expect(!!(x),1)
 #endif
 
-static OBJ const *          hp_top =  heap->obj;
-static OBJ       * restrict hp     = &heap->obj[ORG_HP];
+static OBJ const *          NIL =  heap->obj;
+static OBJ       * restrict hp  = &heap->obj[ORG_HP];
 
 static inline OBJ const * PTR(IDX i) __attribute__((assume_aligned(sizeof(OBJ),sizeof(OBJ))));
-static inline OBJ const * PTR(IDX i) { return &hp_top[i]; }
+static inline OBJ const * PTR(IDX i) { return &NIL[i]; }
 
-#define IDX(p) ((IDX)((p) - hp_top))
+#define IDX(p) ((IDX)((p) - NIL))
 
 static const OBJ *SR,*CR,*DR;
 
 static inline OBJ const * CAR(OBJ const * const p) { return PTR(p->car); }
 static inline OBJ const * CDR(OBJ const * const p) { return PTR(p->cdr); }
-static inline OBJ const * Sp(void) { return SR; }
-static inline OBJ const * Cp(void) { return CR; }
-static inline OBJ const * Dp(void) { return DR; }
+static inline OBJ const * Sp(void) { return     SR; }
+static inline OBJ const * Cp(void) { return     CR; }
+static inline OBJ const * Dp(void) { return     DR; }
 static inline IDX         Si(void) { return IDX(SR); }
 static inline IDX         Ci(void) { return IDX(CR); }
 static inline IDX         Di(void) { return IDX(DR); }
-static inline void        pS(OBJ const * p) { SR = p; }
-static inline void        pC(OBJ const * p) { CR = p; }
-static inline void        pD(OBJ const * p) { DR = p; }
-static inline void        iS(IDX         i) { SR = PTR(i); }
-static inline void        iC(IDX         i) { CR = PTR(i); }
-static inline void        iD(IDX         i) { DR = PTR(i); }
+static inline void        pS(OBJ const * p) {   SR =     p; }
+static inline void        pC(OBJ const * p) {   CR =     p; }
+static inline void        pD(OBJ const * p) {   DR =     p; }
+static inline void        iS(IDX         i) {   SR = PTR(i); }
+static inline void        iC(IDX         i) {   CR = PTR(i); }
+static inline void        iD(IDX         i) {   DR = PTR(i); }
 
     static size_t
 obj_len(OBJ const * const o)
@@ -113,20 +113,37 @@ gc_copy(
     return o->cdr;
 }
 
+static OBJ const ** gc_vars[16] = { &SR,&CR,&DR };
+static int gc_vars_num = 3;
+
+    static void
+gc_vars_push(OBJ const ** const v)
+{
+    assert((int)COUNTOF(gc_vars) > gc_vars_num);
+    gc_vars[gc_vars_num++] = v;
+}
+
+    static OBJ const *
+gc_vars_pop(void)
+{
+    assert(0 < gc_vars_num);
+    return *gc_vars[--gc_vars_num];
+}
+
     static void
 gc(void)
 {
-    OBJ * const prev_top = heap[hp_top != heap->obj].obj,
-        * const next_top = heap[hp_top == heap->obj].obj,
+    OBJ * const prev_top = heap[NIL != heap->obj].obj,
+        * const next_top = heap[NIL == heap->obj].obj,
         * const restrict prev_hp = hp,
         * o = hp = next_top + IDX$GC_TOP;
 
-    assert(hp_top == prev_top);
-    hp_top = next_top;
+    assert(NIL == prev_top);
+    NIL = next_top;
 
-    SR = PTR(gc_copy(prev_top,(IDX)(SR - prev_top)));
-    CR = PTR(gc_copy(prev_top,(IDX)(CR - prev_top)));
-    DR = PTR(gc_copy(prev_top,(IDX)(DR - prev_top)));
+    for (int i=0; i < gc_vars_num; ++i) {
+        *gc_vars[i] = PTR(gc_copy(prev_top,(IDX)(*gc_vars[i] - prev_top)));
+    }
 
     while (unlikely(o < hp)) switch (o->tag) {
         case TAG_NIL:
@@ -191,7 +208,7 @@ gc(void)
             continue;
     }
 
-    //printf("gc_end:%ld use\n",hp - hp_top);
+    //printf("gc_end:%ld use\n",hp - NIL);
 }
 
 static OBJ * gc_malloc(size_t const) __attribute__((assume_aligned(sizeof(OBJ),sizeof(OBJ))));
@@ -201,7 +218,7 @@ gc_malloc(size_t const s)
 {
     assert(s);
 
-    if ((COUNTOF(heap->obj) - (size_t)(hp - hp_top)) * sizeof(OBJ) >= s) {
+    if ((COUNTOF(heap->obj) - (size_t)(hp - NIL)) * sizeof(OBJ) >= s) {
         OBJ * const o = hp;
         _Static_assert(COUNTOF(heap->obj) * sizeof(OBJ) <= SIZE_MAX - OBJ_SIZE_MASK);
         hp += nOBJs(s);
@@ -210,7 +227,7 @@ gc_malloc(size_t const s)
 
     gc();
 
-    assert((COUNTOF(heap->obj) - (size_t)(hp - hp_top)) * sizeof(OBJ) >= s);
+    assert((COUNTOF(heap->obj) - (size_t)(hp - NIL)) * sizeof(OBJ) >= s);
     OBJ * const o = hp;
     hp += nOBJs(s);
     return o;
@@ -240,17 +257,18 @@ call(OBJ * const o)
 }
 
     static OBJ const *
-find_var(
-    OBJ const * i,
-    IDX const   s)
+find_var(OBJ const * i)
 {
+    IDX const s = CR->car;
+    assert(PTR(s)->tag >= TAG_SYM);
+
     while (1) {
         if (s == i->sym) {
             return i;
         }
         if (IDX_SYM_ATret == i->sym) {
-            if (PTR_NIL == i) {
-                return PTR_NIL;
+            if (NIL == i) {
+                return NIL;
             }
         }
         i = CDR(i);
@@ -303,11 +321,11 @@ eval(void)
     goto *next[CR->tag];
 
     I_NIL: {
-        OBJ const * o = DR;
-        while (likely(IDX_SYM_ATret != o->sym)) o = CDR(o);
-        if (unlikely(PTR_NIL == o)) return;
-        CR = CAR(o);
-    } goto *next[(CR = CDR(CR))->tag];
+        while (likely(IDX_SYM_ATret != DR->sym)) DR = CDR(DR);
+        if (unlikely(NIL == DR)) return;
+        CR = CDAR(DR);
+        DR = CDR(DR);
+    } goto *next[CR->tag];
 
     I_cp: {
         OBJ * const o = gc_malloc(sizeof(OBJ));
@@ -319,9 +337,7 @@ eval(void)
 
     I_VAR: {
         OBJ * const o = gc_malloc(sizeof(OBJ));
-        IDX const s = CR->car;
-        assert(PTR(s)->tag >= TAG_SYM);
-        OBJ const * i = find_var(DR,s);
+        OBJ const * i = find_var(DR);
 
         switch (i->tag) {
             case TAG_NUM_REF:
@@ -362,10 +378,64 @@ eval(void)
                        :X -> :Y -> NIL
             */
             case TAG_PRED:
-                assert(TAG_LST == CDR(CR)->tag);
-                //x = CDR(CR);
-                //y = CAAR(i);
-                goto *next[(CR = CDR(CR))->tag];
+            loop_TAG_PRED: {
+                OBJ const * x = CAAR(i);
+                OBJ const * y = CDR(CR);
+                // unify
+                while (NIL != x) {
+                    if (x->car == y->car) {
+                        x = CDR(x);
+                        y = CDR(y);
+                        continue;
+                    }
+                    // no match
+                    while (1) {
+                        do {
+                            i = find_var(CDR(i));
+                            if (TAG_PRED == i->tag) goto loop_TAG_PRED;
+                        } while (NIL != i);
+
+                        // backtrack
+                        for (i = DR; IDX_SYM_TRAIL != i->sym; i = CDR(i))
+                            assert(NIL != i);
+                        DR = CDR(i);
+                        if (NIL == (i = CAR(i))) goto I_NIL;
+                        CR = CDR(i);
+                        i = CAR(i);
+                    }
+                }
+                // next CR is y.
+                i = CDAR(i);
+                gc_vars_push(&i);
+                gc_vars_push(&y);
+                OBJ * const t = gc_malloc(sizeof(OBJ) * ((NIL == i) ? 2 : 3));
+                gc_vars_pop();
+                gc_vars_pop();
+
+                // trail
+                 t   ->tag = TAG_LST;
+                 t   ->cdr = Di();
+                 t   ->sym = IDX_SYM_TRAIL;
+                 t   ->car = IDX(t+1);
+                (t+1)->tag = TAG_LST;
+                (t+1)->cdr = Ci();
+                (t+1)->sym = IDX_NIL;
+                (t+1)->car = IDX(i);
+
+                if (NIL == i) {
+                    DR = t;
+                    goto *next[(CR = y)->tag];
+                }
+
+                (t+2)->tag = TAG_LST;
+                (t+2)->cdr = IDX(t);
+                (t+2)->sym = IDX_SYM_ATret;
+                (t+2)->car = IDX(y);
+
+                DR = (t+2);
+
+                goto *next[(CR = i)->tag];
+            }
 
             case TAG_SBR_REF:
                 (*CAR(i)->sbr)(&state);
@@ -379,9 +449,7 @@ eval(void)
 
     I_LEV: {
         OBJ * const o = gc_malloc(sizeof(OBJ));
-        IDX const s = CR->car;
-        assert(PTR(s)->tag >= TAG_SYM);
-        OBJ const * i = find_var(DR,s);
+        OBJ const * i = find_var(DR);
 
         switch (i->tag) {
             case TAG_NUM_REF:
@@ -390,7 +458,7 @@ eval(void)
                 __attribute__((fallthrough));
 
             case TAG_NIL     ... TAG_LST:
-            case TAG_DEF     ... TAG_PRED:
+            case TAG_DEF:
             case TAG_DLH_REF ... TAG_SBR_REF: {
                 o->tag = i->tag;
                 o->cdr = Si();
@@ -399,6 +467,7 @@ eval(void)
             } goto *next[(CR = CDR(CR))->tag];
 
             case TAG_NUM ... TAG_KWD$MAX:
+            case TAG_PRED:
             case TAG_MOV ... TAG$MAX:
                 __builtin_unreachable();
         }
@@ -452,8 +521,6 @@ eval(void)
             SR = CDR(SR);
         } goto *next[CR->tag];
 
-        case TAG_PRED:
-
         case TAG_SBR_REF: {
             SBR * const sbr = *CAR(SR)->sbr;
             SR = CDR(SR);
@@ -466,10 +533,10 @@ eval(void)
             sbr(&state);
         } goto *next[CR->tag];
 
-        case TAG_NIL     ... TAG_KWD$MAX:
-        case TAG_NUM_REF ... TAG_DLH_REF:
-        case TAG_MOV     ... TAG_DLH:
-        case TAG_SYM     ... TAG$MAX:
+        case TAG_NIL  ... TAG_KWD$MAX:
+        case TAG_PRED ... TAG_DLH_REF:
+        case TAG_MOV  ... TAG_DLH:
+        case TAG_SYM  ... TAG$MAX:
             __builtin_unreachable();
     }
 
@@ -593,15 +660,68 @@ eval(void)
         SR = o;
     } goto *next[(CR = CDDR(CR))->tag];
 
-    I_KWD_QUES:
-    I_KWD_RULE:
-        goto *next[(CR = CDR(CR))->tag];
+    /*
+        ?- (hoo X Y poo Z)
+           ^
+           |
+           +---------------------+
+                                 |
+        (DR) -> TAG_LST -------> TAG_LST -> ...
+                | :IDX_SYM_TRAIL   :@ret
+                v
+                NIL
+    */
+    I_KWD_QUES: {
+        OBJ * const r = gc_malloc(sizeof(OBJ) * 2);
+        OBJ * const t = r + 1;
+
+        r->tag = TAG_LST;
+        r->cdr = Di();
+        r->sym = IDX_SYM_ATret;
+        r->car = CR->cdr;
+
+        t->tag = TAG_LST;
+        t->cdr = IDX(r);
+        t->sym = IDX_SYM_TRAIL;
+        t->car = IDX_NIL;
+
+        DR = t;
+    } goto *next[(CR = CADR(CR))->tag];
+
+    /*
+        > :- ((hoo X Y) bar Z)
+
+        (CR) -> :- -> TAG_LST -> ...
+                      |
+                      v
+               (b) -> TAG_LST -> :bar -> :Z -> NIL
+                      |
+                      v
+                      :hoo -> :X -> :Y -> NIL
+    */
+    I_KWD_RULE: {
+        OBJ       * const o = gc_malloc(sizeof(OBJ) * 2);
+        OBJ       * const p = o + 1;
+        OBJ const * const b = CADR(CR);
+
+        o->tag = TAG_PRED;
+        o->cdr = Di();
+        o->sym = CAR(b)->car;
+        o->car = IDX(p);
+
+        p->tag = TAG_LST;
+        p->cdr = b->cdr;
+        p->sym = IDX_NIL;
+        p->car = CAR(b)->cdr;
+
+        DR = o;
+    } goto *next[(CR = CDDR(CR))->tag];
 
     I_KWD_gc_dump: {
         CR = CDR(CR);
         gc();
         printf("#define ORG_HP (%d)\n",IDX(hp));
-        OBJ const * p = hp_top;
+        OBJ const * p = NIL;
         int count = 0;
         while (p < hp) {
             OBJ const * const q = p + nOBJs(obj_len(p));
@@ -624,7 +744,7 @@ eval(void)
     int
 main(void)
 {
-    SR = DR = PTR_NIL;
+    SR = DR = NIL;
     CR = PTR(ORG_BS);
 
     eval();

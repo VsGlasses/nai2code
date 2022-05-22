@@ -56,6 +56,7 @@ typedef enum __attribute__((packed)) {
     NNC_(IDX_NIL) = 0,
     NNC_(IDX$SYM_TOP),
     NNC_(IDX_SYM_ATret) = NNC_(IDX$SYM_TOP),
+    NNC_(IDX_SYM_TRAIL),
     NNC_(IDX$GC_TOP),
     NNC_(IDX$MAX) = UINT16_MAX
 } NNC_(IDX);

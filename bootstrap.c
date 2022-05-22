@@ -58,40 +58,30 @@ i32(int const num)
     int
 main(void)
 {
-    IDX const sym_srm_so        = IDX(gen_sym("srm.so"));
-    IDX const sym_Open          = IDX(gen_sym("Open"));
-    IDX const sym_GetChar       = IDX(gen_sym("GetChar"));
-    IDX const sym_bootstrap_nnc = IDX(gen_sym("bootstrap.nnc"));
-    IDX const sym_nextc         = IDX(gen_sym("nextc"));
+    IDX const sym_human = IDX(gen_sym("human"));
+    IDX const sym_poo   = IDX(gen_sym("poo"));
+    IDX const sym_pee   = IDX(gen_sym("pee"));
+    IDX const sym_hoo   = IDX(gen_sym("hoo"));
 
     printf("#define ORG_BS ((IDX)%d)\n",hi);
 
-        GEN(KWD_dlopen);
-        GAR(VAR,sym_srm_so);
+        GEN(KWD_RULE);
+        GDA(LST,hi + 3,hi + 1);
+        GAR(VAR,sym_human);
+        GDA(VAR,IDX_NIL,sym_poo);
 
-        GEN(KWD_dup);
+        GEN(KWD_RULE);
+        GDA(LST,hi + 3,hi + 1);
+        GAR(VAR,sym_human);
+        GDA(VAR,IDX_NIL,sym_pee);
 
-        GEN(KWD_dlsym);
-        GAR(VAR,sym_Open);
-
-        GEN(KWD_call);
-        GAR(VAR,sym_bootstrap_nnc);
-
-        GEN(KWD_dlsym);
-        GAR(VAR,sym_GetChar);
-
-        GEN(KWD_let);
-        GAR(VAR,sym_nextc);
-
-   OBJ * const loop = GAR(VAR,sym_nextc);
-        GEN(KWD_dup);
-        i32(0);
-   OBJ * const l00 = GEN(IF_LT);
-        GDR(KWD_DOT,IDX(loop));
-
-        l00->car = hi;
-
-        GDR(KWD_gc_dump,IDX_NIL);
+        GDR(KWD_QUES,IDX_NIL);
+        GDA(LST,IDX_NIL,hi + 1);
+        GDA(LST,hi + 3,hi + 1);
+        GAR(VAR,sym_human);
+        GDA(VAR,IDX_NIL,sym_pee);
+        i32('T');
+        GDA(KWD_DOT,IDX_NIL,IDX_NIL);
 
     printf("#define ORG_HP (%d)\n",hi);
 
@@ -113,6 +103,8 @@ main(void)
                 CASE(KWD_DOT);
                 CASE(KWD_dlopen);
                 CASE(KWD_dlsym);
+                CASE(KWD_QUES);
+                CASE(KWD_RULE);
                 CASE(KWD_call);
                 CASE(KWD_dup);
                 CASE(KWD_gc_dump);
