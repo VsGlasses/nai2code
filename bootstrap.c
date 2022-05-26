@@ -66,20 +66,21 @@ main(void)
     printf("#define ORG_BS ((IDX)%d)\n",hi);
 
         GEN(KWD_RULE);
-        GDA(LST,hi + 3,hi + 1);
+        GDA(LST,hi + 4,hi + 1);
+        GDA(LST,IDX_NIL,hi + 1);
         GAR(VAR,sym_human);
         GDA(VAR,IDX_NIL,sym_poo);
 
         GEN(KWD_RULE);
-        GDA(LST,hi + 3,hi + 1);
+        GDA(LST,hi + 4,hi + 1);
+        GDA(LST,IDX_NIL,hi + 1);
         GAR(VAR,sym_human);
         GDA(VAR,IDX_NIL,sym_pee);
 
-        GDR(KWD_QUES,IDX_NIL);
+        GEN(KWD_QUES);
         GDA(LST,IDX_NIL,hi + 1);
-        GDA(LST,hi + 3,hi + 1);
         GAR(VAR,sym_human);
-        GDA(VAR,IDX_NIL,sym_pee);
+        GAR(VAR,sym_poo);
         i32('T');
         GDA(KWD_DOT,IDX_NIL,IDX_NIL);
 

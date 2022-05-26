@@ -88,7 +88,7 @@ Open(
 GetChar(
     NNC_STATE const * const st)
 {
-    NNC_OBJ * const o = st->gc_malloc(sizeof(NNC_OBJ));
+    NNC_OBJ * const o = st->gc_malloc(sizeof(NNC_OBJ),NULL);
 
     o->tag = NNC_TAG_NUM;
     o->cdr = st->Si();

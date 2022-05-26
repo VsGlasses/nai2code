@@ -106,7 +106,7 @@ typedef void              (*NNC_(SET_REG_IDX_FN))(NNC_(IDX));
 typedef NNC_(OBJ) const * (*NNC_(CAR_CDR_PTR_FN))(NNC_(OBJ) const *);
 
 struct NNC_(STATE) {
-    NNC_(OBJ) * (*gc_malloc)(size_t);
+    NNC_(OBJ) * (*gc_malloc)(size_t,NNC_(IDX) *);
     NNC_(GET_REG_PTR_FN) Sp,Cp,Dp;
     NNC_(GET_REG_IDX_FN) Si,Ci,Di;
     NNC_(SET_REG_PTR_FN) pS,pC,pD;
