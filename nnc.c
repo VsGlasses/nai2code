@@ -255,7 +255,7 @@ find_var(OBJ const * i)
     IDX const s = CR->sym;
     assert(PTR(s)->tag >= TAG_SYM);
 
-    while (1) {
+    while (true) {
         if (s == i->sym) {
             return i;
         }
@@ -287,8 +287,11 @@ typedef enum __attribute__((packed)) {
     UNF_LST,
     UNF_NUM,
     UNF_VAR, // atom,functor
-    UNF_LOG, // e.g. X Y
+    UNF_LGQ, // e.g. X Y
     UNF_ANY, // _
+
+    UNF_LNE,    // Logiq No Enviroment
+    UNF_LUD,    // Logiq UnDefined
     UNF$MAX
 } UNF;
 
@@ -300,11 +303,46 @@ unf_tag(IDX const i)
         [TAG_LST]     = UNF_LST,
         [TAG_NUM]     = UNF_NUM,
         [TAG_VAR]     = UNF_VAR,
-        [TAG_LOG]     = UNF_LOG,
+        [TAG_LGQ]     = UNF_LGQ,
         [TAG_ANY]     = UNF_ANY,
-        [TAG_NUM_REF] = UNF_NUM,
+        // [TAG_NUM_REF] = UNF_NUM,
     };
     return unf[PTR(i)->tag];
+}
+
+    static UNF
+deref(
+    OBJ const *       env,
+    OBJ const * const lgq,
+    IDX       * const gc_objs)
+{
+    assert(TAG_LGQ == lgq->tag);
+
+  loop:
+    if (IDX_SYM_ATret == env->sym) {
+        return UNF_LNE;
+    }
+    if (lgq->sym != env->sym) {
+        env = CDR(env);
+        goto loop;
+    }
+    if (TAG_LGQ != env->tag) {
+        OBJ * const o = gc_malloc(sizeof(OBJ),gc_objs);
+        gc_objs[++gc_objs[0]] = IDX(o);
+        o->cdr = lgq->cdr;
+        if (TAG_NUM_REF != env->tag) {
+            o->i32 = env->i32;
+            return unf_tag(o->tag = env->tag);
+        }
+        o->i32 = CAR(env)->i32;
+        return unf_tag(o->tag = TAG_NUM);
+    }
+    OBJ const * const car_env = CAR(env);
+    if (env != car_env) {
+        env  = car_env;
+        goto loop;
+    }
+    return UNF_LUD;
 }
 
     static void
@@ -361,7 +399,6 @@ eval(void)
 
         switch (i->tag) {
             case TAG_NUM_REF:
-                o->tag = i->tag;
                 i = CAR(i);
                 assert(i->tag == TAG_NUM);
                 __attribute__((fallthrough));
@@ -463,29 +500,31 @@ eval(void)
 
     unfXvarYvar: {
 
-    unfXlgcYlgc: {
-        Xderef = deref(X,X_ENV);
-        Yderef = deref(Y,Y_ENV);
-        if (Xderef == NIL) {
-            if (Yderef == NIL) {
-                OBJ * const x = gc_malloc(2 * sizeof(OBJ),gc_objs);
-                OBJ * const y = x + 1;
 
-                x->tag = TAG_LOG;
-                x->cdr = DR;
-                x->car = IDX(x);
-                x->sym = X->sym;
-                DR = x;
+    unfXlgqYnum: goto *unify[deref(X)][UNF_NUM];
 
-                y->tag = TAG_LOG;
-                y->cdr = Y_ENV;
-                y->car = IDX(x);
-                y->sym = Y->sym;
-                Y_ENV = y;
+    unfXlgcYlgc: goto *unify[deref(X_ENV,X)][deref(Y_ENV,Y)];
 
-                goto *UNIFY(X_IDX = X->cdr,Y_IDX = Y->cdr);
-            }
+        { // Xderef == NIL && Yderef == NIL
+            OBJ * const x = gc_malloc(2 * sizeof(OBJ),gc_objs);
+            OBJ * const y = x + 1;
 
+            x->tag = TAG_LGQ;
+            x->cdr = DR;
+            x->car = IDX(x);
+            x->sym = X->sym;
+            DR = x;
+
+            y->tag = TAG_LGQ;
+            y->cdr = Y_ENV;
+            y->car = IDX(x);
+            y->sym = Y->sym;
+            Y_ENV = y;
+
+            goto *UNIFY(X_IDX = X->cdr,Y_IDX = Y->cdr);
+        }
+
+        { // Xderef == NIL && Yderef != NIL
             OBJ * const x = gc_malloc(sizeof(OBJ),gc_objs);
 
             x->tag = Yderef->tag;
@@ -496,12 +535,13 @@ eval(void)
 
             goto *UNIFY(X_IDX = X->cdr,Y_IDX = Y->cdr);
         }
-        if (Xderef->tag == TAG_LOG) {
+
+        if (Xderef->tag == TAG_LGQ) {
             assert(Xderef->car == IDX(Xderef));
             if (Yderef == NIL) {
                 OBJ * const y = gc_malloc(sizeof(OBJ),gc_objs);
 
-                y->tag = TAG_LOG;
+                y->tag = TAG_LGQ;
                 y->cdr = Y_ENV;
                 y->car = Xderef->car;
                 y->sym = Y->sym;
@@ -517,7 +557,7 @@ eval(void)
                 while (1) {
                     IDX const tag = PTR(*s)->tag;
 
-                    if (tag == TAG_LOG && *s == deref) {
+                    if (tag == TAG_LGQ && *s == deref) {
                         PTR(*d)->tag = deref->tag;
                         if car == car) return;
                     }

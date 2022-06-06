@@ -17,7 +17,7 @@ typedef enum __attribute__((packed)) {
     NNC_(TAG_LST),
     NNC_(TAG_NUM),
     NNC_(TAG_VAR),
-    NNC_(TAG_LOG),  // LOGiq var.
+    NNC_(TAG_LGQ),  // LoGiQ var.
     NNC_(TAG_ANY),  // ANonYmous var.
     NNC_(TAG_LEV),    // Load Effective VAR
     NNC_(TAG_IF_LT),
