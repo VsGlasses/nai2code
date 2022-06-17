@@ -337,15 +337,15 @@ deref(
                 if (TAG_LGQ != env->tag) {
                     o->i32 = env->i32;
                     return unf_tag(o->tag = env->tag);
-                } else {
-                    OBJ const * const prev_env = env;
-                    if (prev_env != (env = CAR(env))) {
-                        continue;
-                    }
                 }
-                o->tag = env->tag;
-                o->i32 = env->i32;
-                return UNF_LUD;
+
+                OBJ const * const prev_env = env;
+
+                if (prev_env == (env = CAR(env))) {
+                    o->tag = env->tag;
+                    o->i32 = env->i32;
+                    return UNF_LUD;
+                }
             }
         }
         o->sym = s;
@@ -353,6 +353,50 @@ deref(
     o->tag = TAG_LGQ;
     o->car = *lgq;
     return UNF_LNE;
+}
+
+    static void
+relgq(
+    env,
+    lgq,
+    lgq)
+{
+    while (1) {
+        if (TAG_LGQ == env->id && env->car = lgq) {
+            if (env == lgq) return;
+            env->car = lgq;
+        }
+        env = CDR(env);
+    }
+}
+
+    static OBJ *
+rebind(
+    IDX   const v,
+    IDX * const gc_objs)
+{
+    gc_objs[0] += 2;
+    X = v;
+    Y = Di();
+
+    *(DR = gc_malloc(sizeof(OBJ),gc_objs)) = *PTR(Y);
+    if (X == Y) {
+        gc_objs[0] -= 2;
+        return DR;
+    }
+
+    Y = Di();
+
+    while (1) {
+        OBJ       * const o = gc_malloc(sizeof(OBJ),gc_objs);
+        OBJ const * const p = CDR(Y);
+        Y = PTR(Y)->cdr = IDX(o);
+        *o = *p;
+        if (PTR(X) == p) {
+            gc_objs[0] -= 2;
+            return o;
+        }
+    }
 }
 
     static void
@@ -448,34 +492,23 @@ eval(void)
                        :X -> :Y   :Z
             */
             case TAG_PRED: {
-                typedef static void const * const JP;
 #define L(X,Y) unf ## X ## Y
-#define U(X,Y) JP X ## _ ## Y = &&L(X,Y)
-                static JP FAILURE = &&unfFAILURE;
-                JP LGQ_    = &&L(LGQ,VAL);
-                JP    _LGQ = &&L(VAL,LGQ);
-                U(NIL,NIL);
-                U(LST,LST); U(LST,LNE); U(LST,LUD);
-                U(NUM,NUM); U(NUM,LNE); U(NUM,LUD);
-                U(VAR,VAR); U(VAR,LNE); U(VAR,LUD);
-                U(LGQ,LGQ);
-                U(ANY,ANY);
-                U(LNE,LST); U(LNE,NUM); U(LNE,VAR); U(LNE,LNE); U(LNE,LUD);
-                U(LUD,LST); U(LUD,NUM); U(LUD,VAR); U(LUD,LNE); U(LUD,LUD);
-#undef U
+#define U(X,Y) &&L(X,Y)
+                static void const * const FAILURE = U(FAIL,URE);
+                static void const * const _ANY_ = U(ANY,ANY);
                 static void const * const unify[][UNF$MAX] = {
-                               // UNF_ETC UNF_NIL UNF_LST UNF_NUM UNF_VAR UNF_LGQ UNF_ANY UNF_LNE UNF_LUD
-                    [UNF_ETC] = { FAILURE,FAILURE,FAILURE,FAILURE,FAILURE,FAILURE,FAILURE,FAILURE,FAILURE, },
-                    [UNF_NIL] = { FAILURE,NIL_NIL,FAILURE,FAILURE,FAILURE,FAILURE,FAILURE,FAILURE,FAILURE, },
-                    [UNF_LST] = { FAILURE,FAILURE,LST_LST,FAILURE,FAILURE,   _LGQ,ANY_ANY,LST_LNE,LST_LUD, },
-                    [UNF_NUM] = { FAILURE,FAILURE,FAILURE,NUM_NUM,FAILURE,   _LGQ,ANY_ANY,NUM_LNE,NUM_LUD, },
-                    [UNF_VAR] = { FAILURE,FAILURE,FAILURE,FAILURE,VAR_VAR,   _LGQ,ANY_ANY,VAR_LNE,VAR_LUD, },
-                    [UNF_LGQ] = { FAILURE,FAILURE,LGQ_   ,LGQ_   ,LGQ_   ,LGQ_LGQ,ANY_ANY,       ,       , },
-                    [UNF_ANY] = { FAILURE,FAILURE,ANY_ANY,ANY_ANY,ANY_ANY,ANY_ANY,ANY_ANY,       ,       , },
-                    [UNF_LNE] = { FAILURE,FAILURE,LNE_LST,LNE_NUM,LNE_VAR,       ,       ,LNE_LNE,LNE_LUD, },
-                    [UNF_LUD] = { FAILURE,FAILURE,LUD_LST,LUD_NUM,LUD_VAR,       ,       ,LUD_LNE,LUD_LUD, },
+                               // UNF_ETC   UNF_NIL    UNF_LST    UNF_NUM    UNF_VAR    UNF_LGQ    UNF_ANY    UNF_LNE    UNF_LUD
+                    [UNF_ETC] = { FAILURE,  FAILURE ,  FAILURE ,  FAILURE ,  FAILURE ,  FAILURE ,  FAILURE ,  FAILURE ,  FAILURE , },
+                    [UNF_NIL] = { FAILURE,U(NIL,NIL),  FAILURE ,  FAILURE ,  FAILURE ,  FAILURE ,  FAILURE ,  FAILURE ,  FAILURE , },
+                    [UNF_LST] = { FAILURE,  FAILURE ,U(LST,LST),  FAILURE ,  FAILURE ,U(LST,LGQ),   _ANY_  ,U(LST,LNE),U(LST,LUD), },
+                    [UNF_NUM] = { FAILURE,  FAILURE ,  FAILURE ,U(NUM,NUM),  FAILURE ,U(NUM,LGQ),   _ANY_  ,U(NUM,LNE),U(NUM,LUD), },
+                    [UNF_VAR] = { FAILURE,  FAILURE ,  FAILURE ,  FAILURE ,U(VAR,VAR),U(VAR,LGQ),   _ANY_  ,U(VAR,LNE),U(VAR,LUD), },
+                    [UNF_LGQ] = { FAILURE,  FAILURE ,U(LGQ,LST),U(LGQ,NUM),U(LGQ,VAR),U(LGQ,LGQ),   _ANY_  ,          ,          , },
+                    [UNF_ANY] = { FAILURE,  FAILURE ,   _ANY_  ,   _ANY_  ,    ANY_  ,   _ANY_  ,   _ANY_  ,          ,          , },
+                    [UNF_LNE] = { FAILURE,  FAILURE ,U(LNE,LST),U(LNE,NUM),U(LNE_VAR),          ,          ,U(LNE,LNE),U(LNE,LUD), },
+                    [UNF_LUD] = { FAILURE,  FAILURE ,U(LUD,LST),U(LUD,NUM),U(LUD,VAR),          ,          ,U(LUD,LNE),U(LUD,LUD), },
                 };
-
+#undef U
                 o->tag = TAG_LST;
                 o->sym = IDX_SYM_ATret;
                 o->car = IDX_NIL;
@@ -493,6 +526,8 @@ eval(void)
 #define I          (gc_objs[1])
 #define Y_ENV      (gc_objs[2])
 #define Y_ENV_TAIL (gc_objs[3])
+#define X_ENV      PTR(Y_ENV_TAIL)->cdr
+#define W          (gc_objs[gc_objs[0] - 2])
 #define X          (gc_objs[gc_objs[0] - 1])
 #define Y          (gc_objs[gc_objs[0]])
 
@@ -505,16 +540,49 @@ eval(void)
 
 
     L(NUM,NUM):
+        if ((TAG_NUM == PTR(X)->tag ? PTR(X) : CAR(X))->i32 ==
+            (TAG_NUM == PTR(Y)->tag ? PTR(Y) : CAR(Y))->i32) goto *UNIFY(X,Y);
+        goto false;
 
     L(VAR,VAR):
+        if (PTR(X)->sym == PTR(Y)->sym && P)
 
 
-    L(LGQ,NUM): goto *unify[deref(&X,DR,gc_objs)][UNF_NUM];
+    L(LST,LGQ): goto *unify[UNF_LST][deref(&Y,PTR(Y_ENV),gc_objs)];
+    L(NUM,LGQ): goto *unify[UNF_NUM][deref(&Y,PTR(Y_ENV),gc_objs)];
+    L(VAR,LGQ): goto *unify[UNF_VAR][deref(&Y,PTR(Y_ENV),gc_objs)];
 
-    L(LGQ,LGQ): goto *unify[deref(&X,DR        ,gc_objs)]
+    L(LGQ,LST): goto *unify[deref(&X,PTR(X_ENV),gc_objs)][UNF_LST];
+    L(LGQ,NUM): goto *unify[deref(&X,PTR(X_ENV),gc_objs)][UNF_NUM];
+    L(LGQ,VAR): goto *unify[deref(&X,PTR(X_ENV),gc_objs)][UNF_VAR];
+
+    L(LGQ,LGQ): goto *unify[deref(&X,PTR(X_ENV),gc_objs)]
                            [deref(&Y,PTR(Y_ENV),gc_objs)];
 
-    L(LNE,LNE): {
+    L(LNE,NUM):{
+        OBJ * const o = gc_malloc(sizeof(OBJ),gc_objs);
+        o->tag = TAG_NUM_REF;
+        o->car = (TAG_NUM == PTR(Y)->tag) ? Y : PTR(Y)->car;
+        o->sym = PTR(Y)->sym;
+        o->cdr = Di();
+        DR = o;
+    } goto *UNIFY(X,Y);
+
+    L(LNE,LST):
+    L(LNE,VAR):{
+        OBJ * const o = gc_malloc(sizeof(OBJ),gc_objs);
+        *o = *PTR(Y);
+        o->cdr = Di();
+        DR = o;
+    } goto *UNIFY(X,Y);
+
+    L(LUD,NUM):{
+        OBJ * const o = rebind(X,gc_objs);
+        o->tag = TAG_NUM_REF;
+        o->car = (TAG_NUM == PTR(Y)->tag) ? Y : PTR(Y)->car;
+    } goto *UNIFY(X,Y);
+
+    L(LNE,LNE):{
         IDX const ix = X; OBJ * const x = PTR(ix); X = x->cdr;
         IDX const iy = Y; OBJ * const y = PTR(iY); Y = y->cdr;
 
@@ -527,7 +595,7 @@ eval(void)
 
     } goto *UNIFY(X,Y);
 
-    unfXlneYlud:{
+    L(LNE,LUD):{
         IDX const ix = X; OBJ * const x = PTR(ix); X = x->cdr;
         IDX const iy = Y; OBJ * const y = PTR(iY); Y = y->cdr;
 
@@ -537,7 +605,7 @@ eval(void)
 
     } goto *UNIFY(X,Y);
 
-    unfXludYlne:{
+    L(LUD,LNE):{
         IDX const ix = X; OBJ * const x = PTR(ix); X = x->cdr;
         IDX const iy = Y; OBJ * const y = PTR(iY); Y = y->cdr;
 
@@ -547,54 +615,32 @@ eval(void)
 
     } goto *UNIFY(X,Y);
 
-    unfXludYlud:{
-            // modify X = Yderef
-            {
-                *s = IDX(DR);
-                *d = IDX(DR = gc_malloc(sizeof(OBJ),gc_objs));
+    L(LUD,LUD):{
+        {
+            IDX const ix = X; OBJ * const x = PTR(ix); X = x->cdr;
+            IDX const iy = Y; OBJ * const y = PTR(iY); Y = y->cdr;
 
-                while (1) {
-                    IDX const tag = PTR(*s)->tag;
+            if (x == y) goto *UNIFY(X,Y);
 
-                    if (tag == TAG_LGQ && *s == deref) {
-                        PTR(*d)->tag = deref->tag;
-                        if car == car) return;
-                    }
-                    PTR(*d)->tag = tag;
-                    PTR(*d)->cdr = PTR(*s)->cdr;
-                    PTR(*d)->sym = PTR(*s)->sym;
-                    PTR(*d)->car = PTR(*s)->car;
-                }
+            gc_objs[0] += 3;
+
+            X = ix;
+            Y = iy;
+        }
+
+        W = Y_ENV_TAIL;
+
+        while (1) {
+            OBJ       * const o = gc_malloc(sizeof(OBJ),gc_objs);
+            OBJ const * const p = CDR(W);
+            W = PTR(W)->cdr = IDX(o);
+            if (TAG_LGQ && car == p) {
+                relgq(Y_ENV,p,o);
+                if (X == p || Y == p) goto *UNIFY(X,Y);
             }
-
-            goto *UNIFY_X_Y;
+            *o = *p;
         }
-        if (Yderef == NIL) {
-            Y = Xderef;
-            goto *UNIFY_X_Y;
-        }
-        Xderef;
-        Yderef;
-    } goto *UNIFY_X_Y;
-
-        if (Xislogic) {
-            if (Yislogic) {
-            }
-            assert(Xislogic && !Yislogic);
-        }
-        if (Yislogic) {
-            assert(!Xislogic && Yislogic);
-        }
-        assert(!Xislogic && !Yislogic);
-                if (X->sym == Y->sym) {
-                    goto unf_success;
-                }
-
-    unfXnumYvar:
-    unfXvarYnum:
-    unfXlstYvar:
-    unfXvarYlst:
-    unfXlstYlst:
+    }
 
     unf_failure:;
                     PUTS_LINE;
