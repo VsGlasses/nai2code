@@ -2,13 +2,15 @@
 
 TARGET = nnc bootstrap bootstrap.h srm.so
 
-CC = clang-13
-CFLAGS = -Weverything -g
-CFLAGS += -Ofast -march=native -flto -fuse-ld=lld
+CC = clang-14
+#CFLAGS = -Weverything -g
+CFLAGS = -Wall -g
+CFLAGS += -Ofast -march=native -flto
 CFLAGS += -fsanitize=undefined,address,leak
 #CFLAGS += -fsanitize=undefined,memory
 #CFLAGS += -DNDEBUG
 #CFLAGS += -D_FORTIFY_SOURCE=2
+#CFLAGS += -fuse-ld=lld
 
 all : $(TARGET)
 
