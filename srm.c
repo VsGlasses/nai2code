@@ -52,7 +52,7 @@ Open(
     NNC_STATE const * const st)
 {
     NNC_OBJ const * o = CDR(st->Cp());
-    assert(NNC_TAG_VAR == o->tag);
+    assert(NNC_TAG_REF == o->tag);
     st->iC(o->cdr);
 
     if (MAP_FAILED != addr) return;

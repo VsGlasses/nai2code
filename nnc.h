@@ -13,13 +13,10 @@
 #endif
 
 typedef enum __attribute__((packed)) {
-    NNC_(TAG_NIL) = 0,
-    NNC_(TAG_LST),
+    NNC_(TAG_LST) = 0,
     NNC_(TAG_NUM),
-    NNC_(TAG_VAR),
-    NNC_(TAG_LGQ),  // LoGiQ var.
-    NNC_(TAG_ANY),  // ANonYmous var.
-    NNC_(TAG_LEV),    // Load Effective VAR
+    NNC_(TAG_REF),
+    NNC_(TAG_LEA),    // Load Effective Address
     NNC_(TAG_IF_LT),
     NNC_(TAG_CALL),
     NNC_(TAG_KWD$MIN),
@@ -42,9 +39,6 @@ typedef enum __attribute__((packed)) {
     NNC_(TAG_KWD$MAX) = NNC_(TAG_KWD_gc),
     NNC_(TAG_DEF),
     NNC_(TAG_PRED),
-    NNC_(TAG_NUM_REF),
-    NNC_(TAG_DLH_REF),
-    NNC_(TAG_SBR_REF),
     NNC_(TAG_MOV),
     NNC_(TAG_DLH),   // Dynamic Loading Handle
     NNC_(TAG_SBR),

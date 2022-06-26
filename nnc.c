@@ -22,7 +22,7 @@
 #endif
 
 #define NIL_SYM \
-    TAG_NIL,/* cdr */IDX_NIL,/* sym */IDX_SYM_ATret,/* car */IDX_NIL, \
+    TAG_LST,/* cdr */IDX_NIL,/* sym */IDX_SYM_ATret,/* car */IDX_NIL, \
     TAG_SYM + sizeof("@ret") - sizeof(""),'@' | ('r' << 8),'e' | ('t' << 8),'\0', \
     TAG_SYM,'\0','\0','\0',/* IDX_SYM_CRUMB */
 
@@ -85,7 +85,7 @@ static inline void        iD(IDX         i) {   DR = PTR(i); }
 obj_len(OBJ const * const o)
 {
     switch (o->tag) {
-        case TAG_NIL ... TAG_MOV-1:
+        case TAG_LST ... TAG_MOV-1:
             return sizeof(OBJ);
 
         case TAG_MOV:
@@ -142,14 +142,13 @@ gc(IDX * const gc_objs)
     }
 
     while (unlikely(o < hp)) switch (o->tag) {
-        case TAG_NIL:
         case TAG_LST:
-        case TAG_VAR ... TAG_ANY:
+        case TAG_REF:
         case TAG_KWD$MAX+1 ... TAG_MOV-1:
             o->sym = gc_copy(prev_top,o->sym);
             __attribute__((fallthrough));
 
-        case TAG_LEV:
+        case TAG_LEA:
         case TAG_IF_LT:
         case TAG_CALL:
             o->car = gc_copy(prev_top,o->car);
@@ -181,7 +180,7 @@ gc(IDX * const gc_objs)
     o = prev_top;
     while (unlikely(o < prev_hp)) switch (o->tag) {
 
-        case TAG_NIL ... TAG_MOV-1:
+        case TAG_LST ... TAG_MOV-1:
             ++o;
             continue;
 
@@ -286,54 +285,65 @@ static STATE const state = {
 
 typedef enum __attribute__((packed)) {
     UNF_ETC = 0,
-    UNF_NIL,
+    UNF_LST,
     UNF_NUM,
-    UNF_VAL,
-    UNF_LGQ, // e.g. X Y
-    UNF_ANY, // _
+    UNF_REF,
 
+    UNF_SYM,
     UNF_LNE,    // Logiq No Enviroment
     UNF_LUD,    // Logiq UnDefined
     UNF$MAX
 } UNF;
 
 static UNF const unf_tag[TAG_SYM] = {
-    [TAG_NIL]     = UNF_NIL,
-    [TAG_LST]     = UNF_VAL,
+    [TAG_LST]     = UNF_LST,
     [TAG_NUM]     = UNF_NUM,
-    [TAG_VAR]     = UNF_VAL,
-    [TAG_LGQ]     = UNF_LGQ,
-    [TAG_ANY]     = UNF_ANY,
-    [TAG_NUM_REF] = UNF_VAL,
+    [TAG_REF]     = UNF_REF,
 };
 
 #define unf_idx(i) (unf_tag[PTR(i)->tag])
 
-// dereference
     static UNF
-walk(
-    IDX       * const lgq,
+deref(
+    IDX       * const ref,
     OBJ const *       env,
     IDX       * const gc_objs)
 {
     OBJ * const o = gc_malloc(sizeof(OBJ),gc_objs);
 
     {
-        OBJ const * const l = PTR(*lgq);
+        OBJ const * const r = PTR(*ref);
 
-        assert(TAG_LGQ == l->tag);
+        assert(TAG_REF == r->tag);
 
-        *lgq = IDX(o);
-        o->cdr = l->cdr;
+        *ref = IDX(o);
+        o->cdr = r->cdr;
 
-        IDX const s = l->sym;
+        if (TAG_NUM == CAR(r)->tag) {
+            o->tag = TAG_NUM;
+            o->i32 = CAR(r)->i32;
+            return UNF_NUM;
+        }
+
+
+        {
+            OBJ const * const p = CAR(r);
+            assert(TAG_SYM <= p->tag);
+            if (TAG_SYM < p->tag && 'A' <= *p->str && 'Z' >= *p->str) {
+                o->tag = TAG_REF;
+                o->i32 = CAR(r)->i32;
+                return UNF_SYM;
+            }
+        }
+
+        IDX const s = r->car;
 
         while (IDX_SYM_ATret != env->sym) {
             if (s != env->sym) {
                 env = CDR(env);
                 continue;
             }
-            if (TAG_LGQ != env->tag) {
+            if (TAG_REF != env->tag) {
                 o->i32 = env->i32;
                 return unf_tag[o->tag = env->tag];
             }
@@ -344,8 +354,8 @@ walk(
         }
         o->sym = s;
     }
-    o->tag = TAG_LGQ;
-    o->car = *lgq;
+    o->tag = TAG_REF;
+    o->car = *ref;
     return UNF_LNE;
 }
 
@@ -353,12 +363,10 @@ walk(
 eval(void)
 {
     static void const * const next[] = {
-        [ TAG_NIL         ] = &&I_NIL,
-        [ TAG_LST         ] = &&I_cp,
+        [ TAG_LST         ] = &&I_LST,
         [ TAG_NUM         ] = &&I_cp,
-        [ TAG_VAR ...
-          TAG_ANY         ] = &&I_VAR,
-        [ TAG_LEV         ] = &&I_LEV,
+        [ TAG_REF         ] = &&I_REF,
+        [ TAG_LEA         ] = &&I_LEA,
         [ TAG_IF_LT       ] = &&I_IF_LT,
         [ TAG_CALL        ] = &&I_CALL,
         [ TAG_KWD_let ...
@@ -384,6 +392,9 @@ eval(void)
 
     IDX gc_objs[1024];
 
+    I_LST:
+        if (CR != NIL) goto I_cp;
+
     I_NIL: {
         while (likely(IDX_SYM_ATret != DR->sym)) DR = CDR(DR);
         if (unlikely(NIL == DR)) return;
@@ -399,23 +410,30 @@ eval(void)
         SR = o;
     } goto *next[(CR = CDR(CR))->tag];
 
-    I_VAR: {
+    I_REF: {
         OBJ       * const o = gc_malloc(sizeof(OBJ),NULL);
         PUTS_LINE;
+        assert(TAG_SYM <= CAR(CR)->tag);
         OBJ const * const i = find_var(DR);
 
         switch (i->tag) {
-            case TAG_NUM_REF:
-                assert(CAR(i)->tag == TAG_NUM);
-                o->tag = TAG_NUM;
-                o->cdr = Si();
-                o->i32 = CDR(i)->i32;
-                SR = o;
-                goto *next[(CR = CDR(CR))->tag];
+            case TAG_REF: switch (CAR(i)->tag) {
+                case TAG_NUM:
+                    o->tag = TAG_NUM;
+                    o->cdr = Si();
+                    o->i32 = CDR(i)->i32;
+                    SR = o;
+                    goto *next[(CR = CDR(CR))->tag];
 
-            case TAG_NIL:
+                case TAG_SBR:
+                    (*CAR(i)->sbr)(&state);
+                    goto *next[CR->tag];
+
+               default:
+                    __attribute__((fallthrough));
+            }
+
             case TAG_LST:
-            case TAG_DLH_REF:
                 o->tag = i->tag;
                 o->cdr = Si();
                 o->i32 = i->i32;
@@ -425,10 +443,6 @@ eval(void)
             case TAG_DEF:
                 call(o);
                 goto *next[(CR = CAR(i))->tag];
-
-            case TAG_SBR_REF:
-                (*CAR(i)->sbr)(&state);
-                goto *next[CR->tag];
 
             default:
                 __builtin_unreachable();
@@ -475,17 +489,15 @@ eval(void)
 #define L(X,Y) unf ## X ## Y
 #define U(X,Y) &&L(X,Y)
         static void const * const FAILURE = U(_FAI,LURE);
-        static void const * const _ = U(ANY,ANY);
         static void const * const unify[][UNF$MAX] = {
-                       // UNF_ETC   UNF_NIL    UNF_NUM    UNF_VAL    UNF_LGQ    UNF_ANY    UNF_LNE    UNF_LUD
-            [UNF_ETC] = { FAILURE,  FAILURE ,  FAILURE ,  FAILURE ,  FAILURE ,  FAILURE ,  FAILURE ,  FAILURE , },
-            [UNF_NIL] = { FAILURE,U(NIL,NIL),  FAILURE ,  FAILURE ,  FAILURE ,  FAILURE ,  FAILURE ,  FAILURE , },
-            [UNF_NUM] = { FAILURE,  FAILURE ,U(NUM,NUM),U(NUM,VAL),U(NUM,LGQ),     _    ,U(NUM,LNE),U(NUM,LUD), },
-            [UNF_VAL] = { FAILURE,  FAILURE ,U(VAL,NUM),U(VAL,VAL),U(VAL,LGQ),     _    ,U(VAL,LNE),U(VAL,LUD), },
-            [UNF_LGQ] = { FAILURE,  FAILURE ,U(LGQ,NUM),U(LGQ,VAL),U(LGQ,LGQ),     _    ,   NULL   ,   NULL   , },
-            [UNF_ANY] = { FAILURE,  FAILURE ,     _    ,     _    ,     _    ,     _    ,   NULL   ,   NULL   , },
-            [UNF_LNE] = { FAILURE,  FAILURE ,U(LNE,NUM),U(LNE,VAL),   NULL   ,   NULL   ,U(LNE,LNE),U(LNE,LUD), },
-            [UNF_LUD] = { FAILURE,  FAILURE ,U(LUD,NUM),U(LUD,VAL),   NULL   ,   NULL   ,U(LUD,LNE),U(LUD,LUD), },
+                       // UNF_ETC   UNF_LST    UNF_NUM    UNF_REF    UNF_SYM    UNF_LNE    UNF_LUD
+            [UNF_ETC] = { FAILURE,  FAILURE ,  FAILURE ,  FAILURE ,  FAILURE ,FAILURE ,  FAILURE   , },
+            [UNF_LST] = { FAILURE,U(LST,LST),  FAILURE ,U(LST,REF),  FAILURE ,U(LST,LNE),U(LST,LUD), },
+            [UNF_NUM] = { FAILURE,  FAILURE ,U(NUM,NUM),U(NUM,REF),  FAILURE ,U(NUM,LNE),U(NUM,LUD), },
+            [UNF_REF] = { FAILURE,U(REF,LST),U(REF,NUM),U(REF,REF),   NULL   ,   NULL   ,   NULL   , },
+            [UNF_SYM] = { FAILURE,  FAILURE ,  FAILURE ,   NULL   ,U(SYM,SYM),U(SYM,LNE),U(SYM,LUD), },
+            [UNF_LNE] = { FAILURE,U(LNE,LST),U(LNE,NUM),   NULL   ,U(LNE,SYM),U(LNE,LNE),U(LNE,LUD), },
+            [UNF_LUD] = { FAILURE,U(LUD,LST),U(LUD,NUM),   NULL   ,U(LUD,SYM),U(LUD,LNE),U(LUD,LUD), },
         };
 #undef U
 
@@ -501,48 +513,29 @@ eval(void)
 
         goto *UNIFY(X,Y);
 
-    L(ANY,ANY): goto *UNIFY(X = PTR(X)->cdr,Y = PTR(Y)->cdr);
+    L(NUM,NUM): if (PTR(X)->i32 == PTR(Y)->i32) goto *UNIFY(X = PTR(X)->cdr,Y = PTR(Y)->cdr); goto unf_FAILURE;
+    L(NUM,REF): goto *unify[UNF_NUM][deref(&Y,PTR(Y_ENV),gc_objs)];
+    L(REF,NUM): goto *unify[deref(&X,PTR(X_ENV),gc_objs)][UNF_NUM];
 
-    L(NUM,NUM): if (                              PTR(X)->i32 == PTR(Y)->i32) goto *UNIFY(X = PTR(X)->cdr,Y = PTR(Y)->cdr); goto unf_FAILURE;
-    L(NUM,VAL): if (TAG_NUM_REF == PTR(Y)->tag && PTR(X)->i32 == CAR(Y)->i32) goto *UNIFY(X = PTR(X)->cdr,Y = PTR(Y)->cdr); goto unf_FAILURE;
-    L(VAL,NUM): if (TAG_NUM_REF == PTR(X)->tag && CAR(X)->i32 == PTR(Y)->i32) goto *UNIFY(X = PTR(X)->cdr,Y = PTR(Y)->cdr); goto unf_FAILURE;
+    L(REF,REF): goto *unify[deref(&X,PTR(X_ENV),gc_objs)]
+                           [deref(&Y,PTR(Y_ENV),gc_objs)];
 
-    L(VAL,VAL):{
-            IDX const ix = X; OBJ const * const x = PTR(ix); X = x->cdr;
-            IDX const iy = Y; OBJ const * const y = PTR(iy); Y = y->cdr;
+    L(SYM,SYM): if (PTR(X)->car == PTR(Y)->car) goto *UNIFY(X = PTR(X)->cdr,Y = PTR(Y)->cdr); goto unf_FAILURE;
 
-            if (x->tag != y->tag) goto unf_FAILURE;
+    L(LST,REF): goto *unify[UNF_LST][deref(&Y,PTR(Y_ENV),gc_objs)];
+    L(REF,LST): goto *unify[deref(&X,PTR(X_ENV),gc_objs)][UNF_LST];
+    L(LST,LST):{
+            if (IDX_NIL == X && IDX_NIL == Y) goto L(NIL,NIL);
 
-            switch (x->tag) {
-                case TAG_VAR:
-                    if (x->sym != y->sym)
-                        goto unf_FAILURE;
-                    __attribute__((fallthrough));
-
-                case TAG_LST:
-                    gc_objs[0] += 2;
-                    goto *UNIFY(X = x->car,Y = y->car);
-
-                case TAG_NUM_REF:
-                    if (CAR(x)->i32 == CAR(y)->i32)
-                        goto *UNIFY(X,Y);
-                    goto unf_FAILURE;
-
-                default:
-                    __builtin_unreachable();
-            }
+            OBJ const * const x = PTR(X); X = x->cdr;
+            OBJ const * const y = PTR(Y); Y = y->cdr;
+            gc_objs[0] += 2;
+            goto *UNIFY(X = x->car,Y = y->car);
         }
-
-    L(NUM,LGQ): goto *unify[UNF_NUM][walk(&Y,PTR(Y_ENV),gc_objs)];
-    L(VAL,LGQ): goto *unify[UNF_VAL][walk(&Y,PTR(Y_ENV),gc_objs)];
-    L(LGQ,NUM): goto *unify[walk(&X,PTR(X_ENV),gc_objs)][UNF_NUM];
-    L(LGQ,VAL): goto *unify[walk(&X,PTR(X_ENV),gc_objs)][UNF_VAL];
-    L(LGQ,LGQ): goto *unify[walk(&X,PTR(X_ENV),gc_objs)]
-                           [walk(&Y,PTR(Y_ENV),gc_objs)];
 
     L(LNE,NUM):{
             OBJ * const o = gc_malloc(sizeof(OBJ),gc_objs);
-            o->tag = TAG_NUM_REF;
+            o->tag = TAG_REF;
             o->cdr = X_ENV;
             o->sym = PTR(X)->sym;
             o->car = Y;
@@ -551,14 +544,15 @@ eval(void)
 
     L(NUM,LNE):{
             OBJ * const o = gc_malloc(sizeof(OBJ),gc_objs);
-            o->tag = TAG_NUM_REF;
+            o->tag = TAG_REF;
             o->cdr = Y_ENV;
             o->sym = PTR(Y)->sym;
             o->car = X;
             Y_ENV  = IDX(o);
         } goto *UNIFY(X = PTR(X)->cdr,Y = PTR(Y)->cdr);
 
-    L(LNE,VAL):{
+    L(LNE,LST):
+    L(LNE,SYM):{
             OBJ * const o = gc_malloc(sizeof(OBJ),gc_objs);
             o->tag = PTR(Y)->tag;
             o->cdr = X_ENV;
@@ -567,7 +561,8 @@ eval(void)
             X_ENV  = IDX(o);
         } goto *UNIFY(X = PTR(X)->cdr,Y = PTR(Y)->cdr);
 
-    L(VAL,LNE):{
+    L(LST,LNE):
+    L(SYM,LNE):{
             OBJ * const o = gc_malloc(sizeof(OBJ),gc_objs);
             o->tag = PTR(X)->tag;
             o->cdr = Y_ENV;
@@ -609,10 +604,12 @@ eval(void)
 
         } goto *UNIFY(X,Y);
 
+    L(LUD,LST):
     L(LUD,NUM):
-    L(LUD,VAL):
+    L(LUD,SYM):
+    L(LST,LUD):
     L(NUM,LUD):
-    L(VAL,LUD):
+    L(SYM,LUD):
     L(LUD,LUD):{
             IDX const ix = X; OBJ const * const x = PTR(ix); X = x->cdr;
             IDX const iy = Y; OBJ const * const y = PTR(iy); Y = y->cdr;
@@ -633,7 +630,7 @@ eval(void)
             OBJ const * const p  = PTR(pi);
             W = Wp->cdr = IDX(o);
             *o = *p;
-            if (TAG_LGQ != p->tag || pi != p->car) goto renv;
+            if (TAG_REF != p->tag || pi != p->car) goto renv;
 
             IDX         const XorYorW = (X == pi) ? Y : (Y == pi) ? X : W;
             OBJ       *       q = &hp[Y_ENV];
@@ -645,12 +642,11 @@ eval(void)
               __label__ loop,skip;
 
               case TAG_NUM:
-                tag = TAG_NUM_REF;
+                tag = TAG_REF;
                 goto skip;
 
               case TAG_LST:
-              case TAG_VAR:
-              case TAG_NUM_REF:
+              case TAG_REF:
                 car = XorYorW_ptr->car;
                 goto skip;
 
@@ -658,7 +654,7 @@ eval(void)
                 q = &hp[q->cdr];
 
               skip: default:
-                if (TAG_LGQ != q->tag || pi != q->car) goto loop;
+                if (TAG_REF != q->tag || pi != q->car) goto loop;
                 q->tag = tag;
                 q->car = car;
                 if (q != o) goto loop;
@@ -730,19 +726,19 @@ eval(void)
 #undef UNIFY
     }
 
-    I_LEV: {
+    I_LEA: {
         OBJ * const o = gc_malloc(sizeof(OBJ),NULL);
+        assert(TAG_SYM == CAR(CR)->tag);
         OBJ const * i = find_var(DR);
 
         switch (i->tag) {
-            case TAG_NUM_REF:
+            case TAG_REF:
                 i = CAR(i);
                 assert(i->tag == TAG_NUM);
                 __attribute__((fallthrough));
 
-            case TAG_NIL     ... TAG_LST:
-            case TAG_DEF:
-            case TAG_DLH_REF ... TAG_SBR_REF: {
+            case TAG_LST:
+            case TAG_DEF: {
                 o->tag = i->tag;
                 o->cdr = Si();
                 o->i32 = i->i32;
@@ -773,22 +769,22 @@ eval(void)
         unsigned n = CR->tag - TAG_KWD_let + 1;
         OBJ * o = gc_malloc(n * sizeof(OBJ),NULL);
         do {
-            assert(TAG_VAR <= CDR(CR)->tag && TAG_ANY >= CDR(CR)->tag);
+            assert(TAG_REF == CDR(CR)->tag);
             assert(SR);
-            if (TAG_NUM == SR->tag) {
-                o->tag = TAG_NUM_REF;
-                o->car = Si();
-            } else if (TAG_DLH == SR->tag) {
-                o->tag = TAG_DLH_REF;
-                o->car = Si();
-            } else if (TAG_SBR == SR->tag) {
-                o->tag = TAG_SBR_REF;
-                o->car = Si();
-            } else {
-                o->tag = SR->tag;
-                o->car = SR->car;
+            switch (SR->tag) {
+                case TAG_NUM:
+                case TAG_DLH:
+                case TAG_SBR:
+                    o->tag = TAG_REF;
+                    o->car = Si();
+                    break;
+
+                default:
+                    o->tag = SR->tag;
+                    o->car = SR->car;
+                    break;
             }
-            o->sym = (CR = CDR(CR))->sym;
+            o->sym = (CR = CDR(CR))->car;
             o->cdr = Di();
             SR = CDR(SR);
             DR = o++;
@@ -802,10 +798,12 @@ eval(void)
             SR = CDR(SR);
         } goto *next[CR->tag];
 
-        case TAG_SBR_REF: {
-            SBR * const sbr = *CAR(SR)->sbr;
-            SR = CDR(SR);
-            sbr(&state);
+        case TAG_REF: {
+            if (TAG_SBR == CAR(SR)->tag) {
+                SBR * const sbr = *CAR(SR)->sbr;
+                SR = CDR(SR);
+                sbr(&state);
+            }
         } goto *next[CR->tag];
 
         case TAG_SBR: {
@@ -881,12 +879,8 @@ eval(void)
         if (TAG_MOV > SR->tag) {
             o->tag = SR->tag;
             o->i32 = SR->i32;
-        } else if (TAG_DLH == SR->tag) {
-            o->tag = TAG_DLH_REF;
-            o->car = Si();
-            o->sym = IDX_NIL;
-        } else if (TAG_SBR == SR->tag) {
-            o->tag = TAG_SBR_REF;
+        } else if (TAG_DLH == SR->tag || TAG_SBR == SR->tag) {
+            o->tag = TAG_REF;
             o->car = Si();
             o->sym = IDX_NIL;
         }
@@ -896,7 +890,7 @@ eval(void)
 
     I_KWD_dlopen: {
         OBJ * const o = gc_malloc(OBJ_SIZE_DLH,NULL);
-        assert(TAG_VAR <= CDR(CR)->tag && TAG_ANY >= CDR(CR)->tag);
+        assert(TAG_REF == CDR(CR)->tag);
         OBJ const * const s = CADR(CR);
         assert(TAG_SYM < s->tag);
         if (unlikely(!(*o->dlh = dlopen(s->str,RTLD_LAZY)))) {
@@ -915,11 +909,11 @@ eval(void)
         OBJ * const o = gc_malloc(OBJ_SIZE_SBR,NULL);
         OBJ const * d = SR;
         SR = CDR(d);
-        if (TAG_DLH_REF == d->tag) {
+        if (TAG_REF == d->tag) {
             d = CAR(d);
         }
         assert(TAG_DLH == d->tag);
-        assert(TAG_VAR <= CDR(CR)->tag && TAG_ANY >= CDR(CR)->tag);
+        assert(TAG_REF == CDR(CR)->tag);
         OBJ const * const s = CADR(CR);
         assert(TAG_SYM < s->tag);
 

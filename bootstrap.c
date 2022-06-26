@@ -61,25 +61,26 @@ main(void)
     IDX const sym_human = IDX(gen_sym("human"));
     IDX const sym_poo   = IDX(gen_sym("poo"));
     IDX const sym_pee   = IDX(gen_sym("pee"));
-    IDX const sym_hoo   = IDX(gen_sym("hoo"));
+    IDX const sym_X     = IDX(gen_sym("X"));
 
     printf("#define ORG_BS ((IDX)%d)\n",hi);
 
         GEN(KWD_RULE);
         GDA(LST,hi + 3,hi + 1);
-        GDA(VAR,IDX_NIL,hi + 1)->sym = sym_human;
-        GDR(VAR,IDX_NIL)->sym = sym_poo;
+        GDA(REF,IDX_NIL,hi + 1)->sym = sym_human;
+        GDR(REF,IDX_NIL)->sym = sym_poo;
 
         GEN(KWD_RULE);
         GDA(LST,hi + 3,hi + 1);
-        GDA(VAR,IDX_NIL,hi + 1)->sym = sym_human;
-        GDR(VAR,IDX_NIL)->sym = sym_pee;
+        GDA(REF,IDX_NIL,hi + 1)->sym = sym_human;
+        GDR(REF,IDX_NIL)->sym = sym_pee;
 
         GEN(KWD_QUES);
         GDA(LST,IDX_NIL,hi + 1);
-        GDA(VAR,hi + 2,hi + 1)->sym = sym_human;
-        GDR(VAR,IDX_NIL)->sym = sym_poo;
-        i32('T');
+        GDA(REF,hi + 2,hi + 1)->sym = sym_human;
+        GDR(REF,IDX_NIL)->sym = sym_X;
+        GEN(REF)->sym = sym_X;
+        //i32('T');
         GDA(KWD_DOT,IDX_NIL,IDX_NIL);
 
     printf("#define ORG_HP (%d)\n",hi);
@@ -92,7 +93,7 @@ main(void)
 #define CASE(t) case TAG_ ## t: tag = #t; break
                 CASE(NUM);
                 CASE(IF_LT);
-                CASE(VAR);
+                CASE(REF);
                 CASE(LST);
                 CASE(CALL);
                 CASE(KWD_def);
