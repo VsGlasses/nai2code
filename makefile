@@ -3,8 +3,8 @@
 TARGET = nnc bootstrap bootstrap.h srm.so
 
 CC = clang-14
-#CFLAGS = -Weverything -g
-CFLAGS = -Wall -g -ferror-limit=999
+CFLAGS = -Weverything -g
+#CFLAGS = -Wall -g -ferror-limit=999
 CFLAGS += -Ofast -march=native -flto
 CFLAGS += -fsanitize=undefined,address,leak
 #CFLAGS += -fsanitize=undefined,memory
