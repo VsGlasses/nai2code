@@ -306,56 +306,58 @@ static UNF const unf_tag[TAG_SYM] = {
     static UNF
 deref(
     IDX       * const ref,
-    OBJ const *       env,
+    IDX const * const env,
     IDX       * const gc_objs)
 {
-    OBJ * const o = gc_malloc(sizeof(OBJ),gc_objs);
+    assert(TAG_REF == PTR(*ref)->tag);
 
-    {
-        OBJ const * const r = PTR(*ref);
-
-        assert(TAG_REF == r->tag);
-
-        *ref = IDX(o);
-        o->cdr = r->cdr;
-
-        if (TAG_NUM == CAR(r)->tag) {
+    switch (CAR(*ref)->tag) {
+        case TAG_NUM: {
+            OBJ * const o = gc_malloc(sizeof(OBJ),gc_objs);
             o->tag = TAG_NUM;
-            o->i32 = CAR(r)->i32;
+            o->cdr = PTR(*ref)->cdr;
+            o->i32 = CAR(*ref)->i32;
+            *ref   = IDX(o);
             return UNF_NUM;
         }
+        default:
+            __builtin_unreachable();
 
-
-        {
-            OBJ const * const p = CAR(r);
-            assert(TAG_SYM <= p->tag);
-            if (TAG_SYM < p->tag && 'A' <= *p->str && 'Z' >= *p->str) {
-                o->tag = TAG_REF;
-                o->i32 = CAR(r)->i32;
+        case TAG_SYM ... TAG$MAX: {
+            if ('A' > CAR(*ref)->str[0] || 'Z' < CAR(*ref)->str[0]) {
                 return UNF_SYM;
             }
         }
-
-        IDX const s = r->car;
-
-        while (IDX_SYM_ATret != env->sym) {
-            if (s != env->sym) {
-                env = CDR(env);
-                continue;
-            }
-            if (TAG_REF != env->tag) {
-                o->i32 = env->i32;
-                return unf_tag[o->tag = env->tag];
-            }
-            env = CAR(env);
-            o->tag = env->tag;
-            o->i32 = env->i32;
-            return UNF_LUD;
-        }
-        o->sym = s;
     }
+
+    OBJ * const o = gc_malloc(sizeof(OBJ),gc_objs);
+
+    IDX const s = PTR(*ref)->car;
+    OBJ const * e = PTR(*env);
+
+    o->cdr = PTR(*ref)->cdr;
+    *ref = IDX(o);
+
+    while (IDX_SYM_ATret != e->sym) {
+        if (s != e->sym) {
+            e = CDR(e);
+            continue;
+        }
+        if (TAG_REF != e->tag) {
+            o->i32 = e->i32;
+            return unf_tag[o->tag = e->tag];
+        }
+        e = CAR(e);
+        o->tag = e->tag;
+        o->i32 = e->i32;
+        return UNF_LUD;
+    }
+
+    printf("s = %d(tag=%d)\n",__LINE__,s,PTR(s)->tag /*PTR(s)->str*/);
+
     o->tag = TAG_REF;
-    o->car = *ref;
+    o->sym = s;
+    o->car = IDX(o);
     return UNF_LNE;
 }
 
@@ -415,6 +417,7 @@ eval(void)
         PUTS_LINE;
         assert(TAG_SYM <= CAR(CR)->tag);
         OBJ const * const i = find_var(DR);
+        printf("line:%d,i->tag=%d,DR->tag=%d\n",__LINE__,i->tag,DR->tag);
 
         switch (i->tag) {
             case TAG_REF: switch (CAR(i)->tag) {
@@ -512,19 +515,31 @@ eval(void)
 #define UNIFY(X,Y) (unify[unf_idx(X)][unf_idx(Y)])
 
             PUTS_LINE;
+            printf("%d:X=%s,Y=%s\n",__LINE__,CAR(X)->str,CAR(Y)->str);
+            printf("unf_idx(X)=%d,unf_idx(Y)=%d\n",unf_idx(X),unf_idx(Y));
         goto *UNIFY(X,Y);
 
     L(NUM,NUM): if (PTR(X)->i32 == PTR(Y)->i32) goto *UNIFY(X = PTR(X)->cdr,Y = PTR(Y)->cdr); goto unf_FAILURE;
-    L(NUM,REF): goto *unify[UNF_NUM][deref(&Y,PTR(Y_ENV),gc_objs)];
-    L(REF,NUM): goto *unify[deref(&X,PTR(X_ENV),gc_objs)][UNF_NUM];
+    L(NUM,REF): goto *unify[UNF_NUM][deref(&Y,&Y_ENV,gc_objs)];
+    L(REF,NUM): goto *unify[deref(&X,&X_ENV,gc_objs)][UNF_NUM];
 
-    L(REF,REF): goto *unify[deref(&X,PTR(X_ENV),gc_objs)]
+    L(REF,REF):{
+            printf("%d:X=%s,Y=%s\n",__LINE__,CAR(X)->str,CAR(Y)->str);
+       const UNF dx = deref(&X,&X_ENV,gc_objs);
+       const UNF dy = deref(&Y,&Y_ENV,gc_objs);
+       printf("dx=%d,dy=%d\n",dx,dy);
+            printf("%d:X=%s,Y=%s\n",__LINE__,CAR(X)->str,CAR(Y)->str);
+       goto *unify[dx][dy];
+    }
+/*
+ * L(REF,REF): goto *unify[deref(&X,PTR(X_ENV),gc_objs)]
                            [deref(&Y,PTR(Y_ENV),gc_objs)];
+*/
 
     L(SYM,SYM): if (PTR(X)->car == PTR(Y)->car) goto *UNIFY(X = PTR(X)->cdr,Y = PTR(Y)->cdr); goto unf_FAILURE;
 
-    L(LST,REF): goto *unify[UNF_LST][deref(&Y,PTR(Y_ENV),gc_objs)];
-    L(REF,LST): goto *unify[deref(&X,PTR(X_ENV),gc_objs)][UNF_LST];
+    L(LST,REF): goto *unify[UNF_LST][deref(&Y,&Y_ENV,gc_objs)];
+    L(REF,LST): goto *unify[deref(&X,&X_ENV,gc_objs)][UNF_LST];
     L(LST,LST):{
             if (IDX_NIL == X && IDX_NIL == Y) goto L(NIL,NIL);
 
@@ -564,6 +579,8 @@ eval(void)
 
     L(LST,LNE):
     L(SYM,LNE):{
+            PUTS_LINE;
+            printf("%d:X=%s,Y=%s,%s\n",__LINE__,CAR(X)->str,PTR(PTR(Y)->sym)->str,PTR(PTR(Y)->car)->str);
             OBJ * const o = gc_malloc(sizeof(OBJ),gc_objs);
             o->tag = PTR(X)->tag;
             o->cdr = Y_ENV;
@@ -857,8 +874,8 @@ eval(void)
     I_KWD_DOT: {
         if (TAG_NUM == SR->tag) {
             putchar(SR->i32);
-        } else if (TAG_SYM <= SR->tag) {
-            printf("sym::%s\n",SR->str);
+        } else if (TAG_REF == SR->tag) {
+            printf("sym(tag=%d):%s\n",CAR(SR)->tag,CAR(SR)->str);
         } else {
             __builtin_dump_struct(SR,&printf);
         }
@@ -997,9 +1014,9 @@ eval(void)
         o->car = IDX(p);
 
         p->tag = TAG_LST;
-        p->cdr = b->cdr;
+        p->cdr = CDR(b)->cdr;
         p->sym = IDX_NIL;
-        p->car = b->car;
+        p->car = CDR(b)->car;
 
         DR = o;
     } goto *next[(CR = CDDR(CR))->tag];

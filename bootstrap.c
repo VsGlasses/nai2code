@@ -78,11 +78,11 @@ main(void)
         GDA(REF,IDX_NIL,sym_pee);
 
         GEN(KWD_QUES);
-        GDA(LST,hi + 4,hi + 1);
+        GDA(LST,hi + 5,hi + 1);
         GAR(REF,sym_human);
-        GDA(LST,IDX_NIL,hi + 1);
+        GDA(LST,hi + 2,hi + 1);
         GDA(REF,IDX_NIL,sym_X);
-        GAR(REF,sym_X);
+        GDA(REF,IDX_NIL,sym_X);
         //i32('T');
         GDA(KWD_DOT,IDX_NIL,IDX_NIL);
 
