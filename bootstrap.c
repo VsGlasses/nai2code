@@ -60,7 +60,7 @@ main(void)
 {
     IDX const sym_human = IDX(gen_sym("human"));
     IDX const sym_poo   = IDX(gen_sym("poo"));
-    IDX const sym_pee   = IDX(gen_sym("pee"));
+    IDX const sym_dead  = IDX(gen_sym("dead"));
     IDX const sym_X     = IDX(gen_sym("X"));
 
     printf("#define ORG_BS ((IDX)%d)\n",hi);
@@ -72,18 +72,21 @@ main(void)
         GDA(REF,IDX_NIL,sym_poo);
 
         GEN(KWD_RULE);
-        GDA(LST,hi + 4,hi + 1);
+        GDA(LST,hi + 7,hi + 1);
+        GAR(REF,sym_dead);
+        GDA(LST,hi + 2,hi + 1);
+        GDA(REF,IDX_NIL,sym_X);
         GAR(REF,sym_human);
         GDA(LST,IDX_NIL,hi + 1);
-        GDA(REF,IDX_NIL,sym_pee);
+        GDA(REF,IDX_NIL,sym_X);
 
         GEN(KWD_QUES);
         GDA(LST,hi + 5,hi + 1);
-        GAR(REF,sym_human);
+        GAR(REF,sym_dead);
         GDA(LST,hi + 2,hi + 1);
         GDA(REF,IDX_NIL,sym_X);
         GDA(REF,IDX_NIL,sym_X);
-        //i32('T');
+
         GDA(KWD_DOT,IDX_NIL,IDX_NIL);
 
     printf("#define ORG_HP (%d)\n",hi);

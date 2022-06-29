@@ -330,23 +330,29 @@ deref(
         }
     }
 
+        PUTS_LINE;
     OBJ * const o = gc_malloc(sizeof(OBJ),gc_objs);
 
     IDX const s = PTR(*ref)->car;
     OBJ const * e = PTR(*env);
 
+    printf("%d:'%s'\n",__LINE__,PTR(s)->str);
+
     o->cdr = PTR(*ref)->cdr;
     *ref = IDX(o);
 
     while (IDX_SYM_ATret != e->sym) {
+    printf("%d:'%s'\n",__LINE__,PTR(e->sym)->str);
         if (s != e->sym) {
             e = CDR(e);
             continue;
         }
+        PUTS_LINE;
         if (TAG_REF != e->tag) {
             o->i32 = e->i32;
             return unf_tag[o->tag = e->tag];
         }
+        PUTS_LINE;
         e = CAR(e);
         o->tag = e->tag;
         o->i32 = e->i32;
@@ -453,15 +459,15 @@ eval(void)
             case TAG_PRED: {
                 o->tag = TAG_LST;
                 o->sym = IDX_SYM_ATret;
-                o->car = IDX_NIL;
+                o->car = CR->cdr;
                 o->cdr = Di();
 
                 gc_objs[0] = 5;
                 gc_objs[1] = IDX(i);       // I
                 gc_objs[2] =               // Y_ENV
                 gc_objs[3] = IDX(o);       // Y_ENV_TAIL
-                gc_objs[4] = CAR(i)->car;  // X
-                gc_objs[5] = CDR(CR)->car; // Y
+                gc_objs[4] = CDR(CR)->car; // X
+                gc_objs[5] = CAR(i)->car;  // Y
             }
         }
     }
@@ -525,11 +531,11 @@ eval(void)
 
     L(REF,REF):{
             printf("%d:X=%s,Y=%s\n",__LINE__,CAR(X)->str,CAR(Y)->str);
-       const UNF dx = deref(&X,&X_ENV,gc_objs);
-       const UNF dy = deref(&Y,&Y_ENV,gc_objs);
-       printf("dx=%d,dy=%d\n",dx,dy);
-            printf("%d:X=%s,Y=%s\n",__LINE__,CAR(X)->str,CAR(Y)->str);
-       goto *unify[dx][dy];
+        const UNF dx = deref(&X,&X_ENV,gc_objs);
+        const UNF dy = deref(&Y,&Y_ENV,gc_objs);
+        printf("dx=%d,dy=%d\n",dx,dy);
+        printf("%d:X=%s,Y=%s\n",__LINE__,CAR(X)->str,CAR(Y)->str);
+        goto *unify[dx][dy];
     }
 /*
  * L(REF,REF): goto *unify[deref(&X,PTR(X_ENV),gc_objs)]
@@ -572,6 +578,7 @@ eval(void)
             IDX const ix = X; OBJ       * const x = &NIL[ix]; X = x->cdr;
             IDX const iy = Y; OBJ const * const y =  PTR(iy); Y = y->cdr;
 
+            printf("%d:'%s'\n",__LINE__,PTR(x->car)->str);
             x->tag = y->tag;
             x->cdr = X_ENV;
             x->car = y->car;
@@ -583,7 +590,7 @@ eval(void)
             IDX const ix = X; OBJ const * const x =  PTR(ix); X = x->cdr;
             IDX const iy = Y; OBJ       * const y = &NIL[iy]; Y = y->cdr;
 
-            PUTS_LINE;
+            printf("%d:'%s'\n",__LINE__,PTR(x->car)->str);
             y->tag = x->tag;
             y->cdr = Y_ENV;
             y->car = x->car;
@@ -591,6 +598,7 @@ eval(void)
         } goto *UNIFY(X,Y);
 
     L(LNE,LNE):{
+            PUTS_LINE;
             IDX const ix = X; OBJ * const x = &NIL[ix]; X = x->cdr;
             IDX const iy = Y; OBJ * const y = &NIL[iy]; Y = y->cdr;
 
@@ -604,6 +612,7 @@ eval(void)
         } goto *UNIFY(X,Y);
 
     L(LNE,LUD):{
+            PUTS_LINE;
             IDX const ix = X; OBJ       * const x = &NIL[ix]; X = x->cdr;
             IDX const iy = Y; OBJ const * const y =  PTR(iy); Y = y->cdr;
 
@@ -614,6 +623,7 @@ eval(void)
         } goto *UNIFY(X,Y);
 
     L(LUD,LNE):{
+            PUTS_LINE;
             IDX const ix = X; OBJ const * const x =  PTR(ix); X = x->cdr;
             IDX const iy = Y; OBJ       * const y = &NIL[iy]; Y = y->cdr;
 
@@ -625,11 +635,25 @@ eval(void)
 
     L(LUD,LST):
     L(LUD,NUM):
-    L(LUD,SYM):
+    L(LUD,SYM):{
+            PUTS_LINE;
+            IDX const ix = X; OBJ const * const x = PTR(ix); X = x->cdr;
+            IDX const iy = Y; OBJ const * const y = PTR(iy); Y = y->cdr;
+
+            if (x == y) goto *UNIFY(X,Y);
+
+            gc_objs[0] += 3;
+
+            X = x->car;
+            Y = iy;
+            W = Y_ENV_TAIL;
+    printf("X=%d,Y=%d\n",X,Y);
+        } goto renv;
+
     L(LST,LUD):
     L(NUM,LUD):
-    L(SYM,LUD):
-    L(LUD,LUD):{
+    L(SYM,LUD):{
+            PUTS_LINE;
             IDX const ix = X; OBJ const * const x = PTR(ix); X = x->cdr;
             IDX const iy = Y; OBJ const * const y = PTR(iy); Y = y->cdr;
 
@@ -638,8 +662,24 @@ eval(void)
             gc_objs[0] += 3;
 
             X = ix;
-            Y = iy;
+            Y = y->car;
             W = Y_ENV_TAIL;
+    printf("X=%d,Y=%d\n",X,Y);
+        } goto renv;
+
+    L(LUD,LUD):{
+            PUTS_LINE;
+            IDX const ix = X; OBJ const * const x = PTR(ix); X = x->cdr;
+            IDX const iy = Y; OBJ const * const y = PTR(iy); Y = y->cdr;
+
+            if (x == y) goto *UNIFY(X,Y);
+
+            gc_objs[0] += 3;
+
+            X = x->car;
+            Y = y->car;
+            W = Y_ENV_TAIL;
+    printf("X=%d,Y=%d\n",X,Y);
         }
 
     renv:{
@@ -650,7 +690,10 @@ eval(void)
             OBJ const * const p  = PTR(pi);
             W = Wp->cdr = IDX(o);
             *o = *p;
+            printf("tag(%d),pi(%d),p->car(%d)\n",p->tag,pi,p->car);
             if (TAG_REF != p->tag || pi != p->car) goto renv;
+
+            printf("found! (%s)\n",PTR(p->sym)->str);
 
             IDX         const XorYorW = (X == pi) ? Y : (Y == pi) ? X : W;
             OBJ       *       q = &NIL[Y_ENV];
@@ -695,8 +738,8 @@ eval(void)
                         gc_objs[0] = 5;
                         I = IDX(i);
                         Y_ENV = Y_ENV_TAIL;
-                        X = CAR(i)->car;
-                        Y = CDR(CR)->car;
+                        X = CDR(CR)->car;
+                        Y = CAR(i)->car;
                         X_ENV = Di();
                         goto *UNIFY(X,Y);
                     }
@@ -716,17 +759,13 @@ eval(void)
     L(NIL,NIL):{
             if (3 != (gc_objs[0] -= 2)) goto *UNIFY(X,Y);
 
-            OBJ const * i = PTR(I);
-            DR = PTR(Y_ENV);
-
             PUTS_LINE;
-            i = CDAR(i);
-            OBJ * const t = gc_malloc(sizeof(OBJ) * ((NIL == i) ? 2 : 3),NULL);
+            OBJ * const t = gc_malloc(sizeof(OBJ) * 2,gc_objs);
+            OBJ const * i = CDAR(PTR(I));
 
-                PUTS_LINE;
             // trail
              t   ->tag = TAG_LST;
-             t   ->cdr = Di();
+             t   ->cdr = X_ENV;
              t   ->sym = IDX_SYM_CRUMB;
              t   ->car = IDX(t+1);
             (t+1)->tag = TAG_LST;
@@ -734,19 +773,14 @@ eval(void)
             (t+1)->sym = IDX_NIL;
             (t+1)->car = IDX(i);
 
-                PUTS_LINE;
             if (NIL == i) {
                 DR = t;
                 PUTS_LINE;
                 goto *next[(CR = CDDR(CR))->tag];
             }
 
-            (t+2)->tag = TAG_LST;
-            (t+2)->cdr = IDX(t);
-            (t+2)->sym = IDX_SYM_ATret;
-            (t+2)->car = CR->cdr;
-
-            DR = (t+2);
+            X_ENV = IDX(t);
+            DR = PTR(Y_ENV);
 
                 PUTS_LINE;
             goto *next[(CR = i)->tag];
