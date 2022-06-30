@@ -419,7 +419,7 @@ eval(void)
     } goto *next[(CR = CDR(CR))->tag];
 
     I_REF: {
-        OBJ       * const o = gc_malloc(sizeof(OBJ),NULL);
+        OBJ * const o = gc_malloc(sizeof(OBJ),NULL);
         PUTS_LINE;
         assert(TAG_SYM <= CAR(CR)->tag);
         OBJ const * const i = find_var(DR);
@@ -457,17 +457,31 @@ eval(void)
                 __builtin_unreachable();
 
             case TAG_PRED: {
-                o->tag = TAG_LST;
-                o->sym = IDX_SYM_ATret;
-                o->car = CR->cdr;
-                o->cdr = Di();
+                gc_unmalloc(sizeof(OBJ));
+                assert(o == hp);
 
-                gc_objs[0] = 5;
-                gc_objs[1] = IDX(i);       // I
-                gc_objs[2] =               // Y_ENV
-                gc_objs[3] = IDX(o);       // Y_ENV_TAIL
-                gc_objs[4] = CDR(CR)->car; // X
-                gc_objs[5] = CAR(i)->car;  // Y
+                OBJ * const t = gc_malloc(sizeof(OBJ) * 3,gc_objs);
+
+                t->tag = TAG_LST;
+                t->sym = IDX_SYM_ATret;
+                t->car = CR->cdr;
+                t->cdr = IDX(t + 1);
+
+                // trail
+                (t+1)->tag = TAG_LST;
+                (t+1)->cdr = Di();
+                (t+1)->sym = IDX_SYM_CRUMB;
+                (t+1)->car = IDX(t+2);
+                (t+2)->tag = TAG_LST;
+                (t+2)->cdr = Ci();
+                (t+2)->sym = IDX_NIL;
+                (t+2)->car = IDX(i);
+
+                gc_objs[0] = 4;
+                gc_objs[1] =               // Y_ENV
+                gc_objs[2] = IDX(t);       // Y_ENV_TAIL
+                gc_objs[3] = CDR(CR)->car; // X
+                gc_objs[4] = CAR(i)->car;  // Y
             }
         }
     }
@@ -510,10 +524,11 @@ eval(void)
         };
 #undef U
 
-#define I          (gc_objs[1])
-#define Y_ENV      (gc_objs[2])
-#define Y_ENV_TAIL (gc_objs[3])
-#define X_ENV      (NIL[Y_ENV_TAIL].cdr)
+#define Y_ENV      (gc_objs[1])
+#define Y_ENV_TAIL (gc_objs[2])
+#define CRUMB      (Y_ENV_TAIL + 1)
+#define X_ENV      (NIL[CRUMB].cdr)
+#define I          (NIL[CRUMB + 1].car)
 #define W          (gc_objs[gc_objs[0] - 2])
 #define X          (gc_objs[gc_objs[0] - 1])
 #define Y          (gc_objs[gc_objs[0]])
@@ -646,7 +661,7 @@ eval(void)
 
             X = x->car;
             Y = iy;
-            W = Y_ENV_TAIL;
+            W = CRUMB;
     printf("X=%d,Y=%d\n",X,Y);
         } goto renv;
 
@@ -663,7 +678,7 @@ eval(void)
 
             X = ix;
             Y = y->car;
-            W = Y_ENV_TAIL;
+            W = CRUMB;
     printf("X=%d,Y=%d\n",X,Y);
         } goto renv;
 
@@ -678,7 +693,7 @@ eval(void)
 
             X = x->car;
             Y = y->car;
-            W = Y_ENV_TAIL;
+            W = CRUMB;
     printf("X=%d,Y=%d\n",X,Y);
         }
 
@@ -735,7 +750,7 @@ eval(void)
                 do {
                     i = find_var(CDR(i));
                     if (TAG_PRED == i->tag) {
-                        gc_objs[0] = 5;
+                        gc_objs[0] = 4;
                         I = IDX(i);
                         Y_ENV = Y_ENV_TAIL;
                         X = CDR(CR)->car;
@@ -757,32 +772,19 @@ eval(void)
         }
 
     L(NIL,NIL):{
-            if (3 != (gc_objs[0] -= 2)) goto *UNIFY(X,Y);
+            if (2 != (gc_objs[0] -= 2)) goto *UNIFY(X,Y);
 
             PUTS_LINE;
-            OBJ * const t = gc_malloc(sizeof(OBJ) * 2,gc_objs);
+
             OBJ const * i = CDAR(PTR(I));
-
-            // trail
-             t   ->tag = TAG_LST;
-             t   ->cdr = X_ENV;
-             t   ->sym = IDX_SYM_CRUMB;
-             t   ->car = IDX(t+1);
-            (t+1)->tag = TAG_LST;
-            (t+1)->cdr = Ci();
-            (t+1)->sym = IDX_NIL;
-            (t+1)->car = IDX(i);
-
             if (NIL == i) {
-                DR = t;
+                DR = PTR(CRUMB);
                 PUTS_LINE;
                 goto *next[(CR = CDDR(CR))->tag];
             }
 
-            X_ENV = IDX(t);
+            PUTS_LINE;
             DR = PTR(Y_ENV);
-
-                PUTS_LINE;
             goto *next[(CR = i)->tag];
         }
 #undef UNIFY
