@@ -146,11 +146,6 @@ gc(IDX * const gc_objs)
         case TAG_REF:
         case TAG_KWD$MAX+1 ... TAG_MOV-1:
             o->sym = gc_copy(prev_top,o->sym);
-            __attribute__((fallthrough));
-
-        case TAG_LEA:
-        case TAG_IF_LT:
-        case TAG_CALL:
             o->car = gc_copy(prev_top,o->car);
             __attribute__((fallthrough));
 
@@ -234,25 +229,8 @@ gc_unmalloc(size_t const s)
     hp -= nOBJs(s);
 }
 
-/*
-    (DR) -> TAG_LST -> (prev DR)
-            | :@ret
-            v
-           (saved CR)
-*/
-    static void
-call(OBJ * const o)
-{
-    o->tag = TAG_LST;
-    o->sym = IDX_SYM_ATret;
-    o->car = Ci();
-    o->cdr = Di();
-
-    DR = o;
-}
-
     static OBJ const *
-find_var(OBJ const * i)
+find(OBJ const * i)
 {
     IDX const s = CR->car;
     assert(PTR(s)->tag >= TAG_SYM);
@@ -374,13 +352,7 @@ eval(void)
         [ TAG_LST         ] = &&I_LST,
         [ TAG_NUM         ] = &&I_cp,
         [ TAG_REF         ] = &&I_REF,
-        [ TAG_LEA         ] = &&I_LEA,
-        [ TAG_IF_LT       ] = &&I_IF_LT,
-        [ TAG_CALL        ] = &&I_CALL,
-        [ TAG_KWD_let ...
-          TAG_KWD_3let    ] = &&I_KWD_let,
         [ TAG_KWD_call    ] = &&I_KWD_call,
-        [ TAG_KWD_def     ] = &&I_KWD_def,
         [ TAG_KWD_PLUS    ] = &&I_KWD_PLUS,
         [ TAG_KWD_DOT     ] = &&I_KWD_DOT,
         [ TAG_KWD_1MINUS  ] = &&I_KWD_1MINUS,
@@ -422,7 +394,7 @@ eval(void)
         OBJ * const o = gc_malloc(sizeof(OBJ),NULL);
         PUTS_LINE;
         assert(TAG_SYM <= CAR(CR)->tag);
-        OBJ const * const i = find_var(DR);
+        OBJ const * const i = find(DR);
         printf("line:%d,i->tag=%d,DR->tag=%d\n",__LINE__,i->tag,DR->tag);
 
         switch (i->tag) {
@@ -449,14 +421,10 @@ eval(void)
                 SR = o;
                 goto *next[(CR = CDR(CR))->tag];
 
-            case TAG_DEF:
-                call(o);
-                goto *next[(CR = CAR(i))->tag];
-
             default:
                 __builtin_unreachable();
 
-            case TAG_PRED: {
+            case TAG_GOAL: {
                 gc_unmalloc(sizeof(OBJ));
                 assert(o == hp);
 
@@ -499,7 +467,7 @@ eval(void)
         (DR)  (i)
          |     |
          v     v
-        ... -> TAG_PRED -> ...
+        ... -> TAG_GOAL -> ...
                |   :hoo
                v
                TAG_LST -> :bar -> TAG_LST
@@ -748,8 +716,8 @@ eval(void)
             OBJ const * i = PTR(I);
             while (1) {
                 do {
-                    i = find_var(CDR(i));
-                    if (TAG_PRED == i->tag) {
+                    i = find(CDR(i));
+                    if (TAG_GOAL == i->tag) {
                         gc_objs[0] = 4;
                         I = IDX(i);
                         Y_ENV = Y_ENV_TAIL;
@@ -790,77 +758,7 @@ eval(void)
 #undef UNIFY
     }
 
-    I_LEA: {
-        OBJ * const o = gc_malloc(sizeof(OBJ),NULL);
-        assert(TAG_SYM <= CAR(CR)->tag);
-        OBJ const * i = find_var(DR);
-
-        switch (i->tag) {
-            case TAG_REF:
-                i = CAR(i);
-                assert(i->tag == TAG_NUM);
-                __attribute__((fallthrough));
-
-            case TAG_LST:
-            case TAG_DEF: {
-                o->tag = i->tag;
-                o->cdr = Si();
-                o->i32 = i->i32;
-                SR = o;
-            } goto *next[(CR = CDR(CR))->tag];
-
-            default:
-                __builtin_unreachable();
-        }
-    }
-
-    I_IF_LT: {
-        OBJ const * const n0 = SR;
-        OBJ const * const n1 = CDR(n0);
-        assert(n0->tag == TAG_NUM);
-        assert(n1->tag == TAG_NUM);
-        SR = CDR(n1);
-        if (n0->i32 > n1->i32) {
-            goto *next[(CR = CAR(CR))->tag];
-        }
-    } goto *next[(CR = CDR(CR))->tag];
-
-    I_CALL: {
-        call(gc_malloc(sizeof(OBJ),NULL));
-    } goto *next[(CR = CAR(CR))->tag];
-
-    I_KWD_let: {
-        unsigned n = CR->tag - TAG_KWD_let + 1;
-        OBJ * o = gc_malloc(n * sizeof(OBJ),NULL);
-        do {
-            assert(TAG_REF == CDR(CR)->tag);
-            assert(SR);
-            switch (SR->tag) {
-                case TAG_NUM:
-                case TAG_DLH:
-                case TAG_SBR:
-                    o->tag = TAG_REF;
-                    o->car = Si();
-                    break;
-
-                default:
-                    o->tag = SR->tag;
-                    o->car = SR->car;
-                    break;
-            }
-            o->sym = (CR = CDR(CR))->car;
-            o->cdr = Di();
-            SR = CDR(SR);
-            DR = o++;
-        } while (--n);
-    } goto *next[(CR = CDR(CR))->tag];
-
     I_KWD_call: switch (SR->tag) {
-        case TAG_DEF: {
-            call(gc_malloc(sizeof(OBJ),NULL));
-            CR = CAR(SR);
-            SR = CDR(SR);
-        } goto *next[CR->tag];
 
         case TAG_REF: {
             if (TAG_SBR == CAR(SR)->tag) {
@@ -879,22 +777,6 @@ eval(void)
         default:
             __builtin_unreachable();
     }
-
-    /*
-        (SR) -> TAG_DEF -> ...
-                |
-                v
-               ...
-    */
-    I_KWD_def: {
-        assert(SR->tag == TAG_LST);
-        OBJ * const o = gc_malloc(sizeof(OBJ),NULL);
-        o->tag = TAG_DEF;
-        o->sym = IDX_NIL;
-        o->car = SR->car;
-        o->cdr = SR->cdr;
-        SR = o;
-    } goto *next[(CR = CDR(CR))->tag];
 
     I_KWD_PLUS: {
         OBJ * const o = gc_malloc(sizeof(OBJ),NULL);
@@ -1044,7 +926,7 @@ eval(void)
         OBJ const * const b = CADR(CR);
 
         PUTS_LINE;
-        o->tag = TAG_PRED;
+        o->tag = TAG_GOAL;
         o->cdr = Di();
         o->sym = b->car;
         printf("sym:tag(%d):%s\n",PTR(o->sym)->tag,PTR(o->sym)->str);

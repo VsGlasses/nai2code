@@ -98,14 +98,9 @@ main(void)
             switch (*u) {
 #define CASE(t) case TAG_ ## t: tag = #t; break
                 CASE(NUM);
-                CASE(IF_LT);
                 CASE(REF);
                 CASE(LST);
-                CASE(CALL);
-                CASE(KWD_def);
                 CASE(KWD_1MINUS);
-                CASE(KWD_let);
-                CASE(KWD_3let);
                 CASE(KWD_DOT);
                 CASE(KWD_dlopen);
                 CASE(KWD_dlsym);
